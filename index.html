@@ -370,6 +370,7 @@ const pcv=document.createElement('canvas'); pcv.width=pcv.height=128;
 const px2=pcv.getContext('2d');
 function applyStreaks(d,ang,arc,amount){ // 沿筆畫方向把拖痕「擦」進蓋章
   if(!(amount>0)) return;
+  if(!STREAK_INV) ensureBase();
   px2.globalCompositeOperation='destination-out';
   px2.save(); px2.translate(d/2,d/2); px2.rotate(ang);
   px2.globalAlpha=amount;
@@ -395,23 +396,110 @@ function pencilStamp(ctx,X,Y,r,alpha,tile,inner,ang,arc,streak){
   applyStreaks(d,ang,arc,streak);
   ctx.globalAlpha=alpha; ctx.drawImage(pcv,0,0,d,d,ox,oy,d,d); ctx.globalAlpha=1;
 }
-/* ── 毛筆：提按、墨量遞減、飛白、紙張暈染 ── */
-function brushStamp(ctx,X,Y,r,ang,alpha,dry,arc){
-  const d=Math.ceil(r*2.3); if(d<1||alpha<=0) return;
+/* ── 毛筆：一筆三段（起筆入鋒・行筆・收筆出鋒）、五墨、飛白、纖維暈染 ── */
+function brushStamp(ctx,X,Y,r,ang,alpha){
+  const d=Math.ceil(r*2.8); if(d<1||alpha<=0) return;
   if(pcv.width<d){ pcv.width=pcv.height=Math.ceil(d*1.25); }
   px2.globalCompositeOperation='source-over'; px2.clearRect(0,0,d,d);
   px2.fillStyle=S.color;
+  // 筆腹水滴形 footprint：沿行筆方向略拉長
   px2.save(); px2.translate(d/2,d/2); px2.rotate(ang);
-  px2.beginPath(); px2.ellipse(0,0,r*1.08,r*.86,0,0,7); px2.fill();
+  px2.beginPath(); px2.ellipse(0,0,r*1.3,r*.78,0,0,7); px2.fill();
   px2.restore();
-  const g=px2.createRadialGradient(d/2,d/2,r*.5,d/2,d/2,r*1.08);
-  g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(.8,'rgba(0,0,0,.92)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  const g=px2.createRadialGradient(d/2,d/2,r*.55,d/2,d/2,r*1.32);
+  g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(.82,'rgba(0,0,0,.94)'); g.addColorStop(1,'rgba(0,0,0,0)');
   px2.globalCompositeOperation='destination-in';
   px2.fillStyle=g; px2.fillRect(0,0,d,d);
-  applyStreaks(d,ang,arc,dry); // 飛白
+  px2.globalCompositeOperation='source-over';
   ctx.globalAlpha=alpha;
   ctx.drawImage(pcv,0,0,d,d,Math.round(X-d/2),Math.round(Y-d/2),d,d);
   ctx.globalAlpha=1;
+}
+function eraseStreakSegment(s,delta){ // 飛白：收筆時逐段沿筆方向擦出白絲
+  if(!STREAK_INV) ensureBase();        // 段與段精確相接（不重疊→無棋盤痕）
+  const W=s.w*1.6, L=delta;
+  strokeCtx.save();
+  strokeCtx.translate(s.x,s.y); strokeCtx.rotate(s.ang);
+  strokeCtx.beginPath(); strokeCtx.rect(-L, -W, L, W*2);
+  strokeCtx.clip();
+  strokeCtx.globalCompositeOperation='destination-out';
+  strokeCtx.globalAlpha=clamp(s.dry,0,1);
+  // 紋理以弧長錨定：arc 每增加 delta，圖樣同步平移 → 跨段連續
+  const off=Math.round(((s.arc%TS)+TS)%TS);
+  for(let ty=-W-TS;ty<W+TS;ty+=TS) for(let tx=-off-L-TS-TS;tx<L+TS;tx+=TS)
+    strokeCtx.drawImage(STREAK_INV,tx,ty);
+  strokeCtx.restore();
+}
+const bleedMasks={};
+function bleedMask(tk){ // 紙纖維遮罩：暈染的毛邊來自這裡
+  if(bleedMasks[tk]) return bleedMasks[tk];
+  const N=ensureNoise(tk);
+  const c=document.createElement('canvas'); c.width=c.height=TS;
+  const x=c.getContext('2d'), img=x.createImageData(TS,TS);
+  for(let i=0;i<TS*TS;i++) img.data[i*4+3]=Math.round((.2+.8*N.tooth[i])*255);
+  x.putImageData(img,0,0); bleedMasks[tk]=c; return c;
+}
+const bleedMaskFull={};
+function bleedMaskDoc(tk,w,h){ // 整張畫布大小的纖維遮罩（destination-in 必須一次套用）
+  const key=tk+'_'+w+'x'+h;
+  if(bleedMaskFull[key]) return bleedMaskFull[key];
+  if(Object.keys(bleedMaskFull).length>3) for(const k in bleedMaskFull) delete bleedMaskFull[k];
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const x=c.getContext('2d'), mt=bleedMask(tk);
+  for(let ty=0;ty<h;ty+=TS) for(let tx=0;tx<w;tx+=TS) x.drawImage(mt,tx,ty);
+  bleedMaskFull[key]=c; return c;
+}
+function finishBrushStroke(layer){
+  const d=S.doc, P=PAPERS[paperOf().tooth||'med'];
+  // 收筆出鋒：沿最後行筆方向收尖（解決圓鈍筆尾）
+  if(stroke.lastWb>1.2 && stroke.pv2){
+    const n=12, L=stroke.lastWb*2.6, a=stroke.ang2||0;
+    const x0=stroke.pv2.x, y0=stroke.pv2.y;
+    for(let i=1;i<=n;i++){
+      const k=i/n, tx=x0+Math.cos(a)*L*k, ty=y0+Math.sin(a)*L*k;
+      brushStamp(strokeCtx, tx, ty,
+        Math.max(.35, stroke.lastWb*.5*(1-k)), a, .82*(1-k*.5));
+      stroke.samples.push({x:tx,y:ty,ang:a,w:Math.max(1,stroke.lastWb*(1-k)),
+        dry:.25+.55*k, arc:(stroke.arc2||0)+L*k});
+      bboxAdd(tx,ty,stroke.lastWb+4);
+    }
+  }
+  // 飛白：整筆完成後分段擦出（避免蓋章重疊互相抵銷）
+  let lastArc=stroke.samples.length?stroke.samples[0].arc:0, drySum=0;
+  for(const s of stroke.samples){
+    drySum+=s.dry;
+    const delta=s.arc-lastArc;
+    if(s.dry>.12 && delta>=s.w*.6){ eraseStreakSegment(s,delta); lastArc=s.arc; }
+    else if(s.dry<=.12 && delta>0){ lastArc=s.arc; } // 濕段不擦，重設錨點
+  }
+  const wet=1-clamp(drySum/Math.max(1,stroke.samples.length),0,1);
+  // 暈染：縮放模糊＋紙纖維遮罩 → 粒狀滲透；只有濕筆才暈
+  if(P.absorb>.12 && stroke.maxW>2 && wet>.25){
+    const sc=clamp(Math.round(stroke.maxW*.16*P.absorb)+3, 3, 14);
+    const a=document.createElement('canvas');
+    a.width=Math.ceil(d.w/sc); a.height=Math.ceil(d.h/sc);
+    a.getContext('2d').drawImage(strokeCv,0,0,a.width,a.height);
+    // 第二層更寬的暈（半解析度再縮一次）
+    const a2=document.createElement('canvas');
+    a2.width=Math.max(1,Math.ceil(a.width/2)); a2.height=Math.max(1,Math.ceil(a.height/2));
+    a2.getContext('2d').drawImage(a,0,0,a2.width,a2.height);
+    const b=document.createElement('canvas'); b.width=d.w; b.height=d.h;
+    const bx=b.getContext('2d');
+    bx.drawImage(a,0,0,d.w,d.h);
+    bx.globalAlpha=.55; bx.drawImage(a2,0,0,d.w,d.h); bx.globalAlpha=1;
+    bx.globalCompositeOperation='destination-in';
+    bx.drawImage(bleedMaskDoc(paperOf().tooth||'med', d.w, d.h),0,0);
+    layer.ctx.save();
+    layer.ctx.globalCompositeOperation='multiply';
+    layer.ctx.globalAlpha=clamp(.85*P.absorb*wet,0,.8);
+    layer.ctx.drawImage(b,0,0); layer.ctx.restore();
+    const pad=sc*3.5;
+    stroke.bbox.x0-=pad; stroke.bbox.y0-=pad; stroke.bbox.x1+=pad; stroke.bbox.y1+=pad;
+  }
+  // 筆畫本體：multiply 積墨（交疊筆畫變濃）
+  layer.ctx.save();
+  layer.ctx.globalAlpha=.92; layer.ctx.globalCompositeOperation='multiply';
+  layer.ctx.drawImage(strokeCv,0,0); layer.ctx.restore();
 }
 /* ── 塗抹（手指）──：把筆畫像用指腹推開 */
 const smCv=document.createElement('canvas'); smCv.width=smCv.height=128;
@@ -455,28 +543,29 @@ const BRUSHES = {
       const jx=(Math.random()-.5)*r*.08, jy=(Math.random()-.5)*r*.08;
       pencilStamp(ctx,pt.x+jx,pt.y+jy,r,alpha,tile,inner,ang,stroke.arc,streak);
     }},
-  brush:{ layered:true, blend:'source-over', alpha:.96, spacing:.18,
+  brush:{ layered:true, blend:'multiply', alpha:.92, spacing:.15,
     draw(ctx,pt){
       const P=PAPERS[paperOf().tooth||'med'];
       const pv=stroke.pv2||stroke.last;
       const dx=pt.x-pv.x, dy=pt.y-pv.y, dl=Math.hypot(dx,dy);
       const ang=(dx||dy)?Math.atan2(dy,dx):(stroke.ang2||0);
       stroke.ang2=ang; stroke.arc2=(stroke.arc2||0)+dl; stroke.pv2={x:pt.x,y:pt.y};
-      if(stroke.ink===undefined){ stroke.ink=1; stroke.cap=Math.max(900, S.sizeDoc()*S.sizeDoc()*60); stroke.used=0; }
-      // 提按：筆鋒髮絲 → 筆腹全寬
-      const w=Math.max(.7, S.sizeDoc()*1.9*(.1+1.5*Math.pow(pt.p,1.6)));
+      if(stroke.ink===undefined){ stroke.ink=1; stroke.cap=Math.max(1400, S.sizeDoc()*S.sizeDoc()*85); stroke.used=0; stroke.maxW=0; stroke.samples=[]; }
+      if(dl<.01 && !stroke.samples.length) return; // 跳過落筆原點章（避免起筆孤點）
+      const sp=clamp((stroke.speed||0)/4.5,0,1);          // 行筆速度
+      // 提按（主控）：筆鋒髮絲 → 筆腹全寬；1.8 次方曲線要求刻意下按
+      let w=Math.max(.6, S.sizeDoc()*2.1*(.05+1.65*Math.pow(pt.p,1.8)));
+      w*=clamp((stroke.arc2||0)/(S.sizeDoc()*1.6),.18,1); // 起筆露鋒（入筆收窄）
+      w*=(1-.28*sp);                                       // 疾筆則細
+      stroke.maxW=Math.max(stroke.maxW,w); stroke.lastWb=w;
       stroke.used+=w*Math.max(dl,.8); stroke.ink=clamp(1-stroke.used/stroke.cap,0,1);
       const ink=stroke.ink;
-      const dry=clamp((.42-ink)/.42,0,1)*.95;   // 墨乾 → 飛白
-      const alpha=clamp((.5+.45*pt.p)*(.3+.7*Math.min(1,ink*2.5)),.06,1);
-      brushStamp(ctx,pt.x,pt.y,w*.5,ang,alpha,dry,stroke.arc2);
-      // 暈染：吸水的紙讓墨往外滲（生宣＞素描紙＞熟宣）
-      if(P.absorb>.08 && ink>.18){
-        const r2=w*.5*(1.3+1.1*P.absorb);
-        const g=ctx.createRadialGradient(pt.x,pt.y,w*.28,pt.x,pt.y,r2);
-        g.addColorStop(0,S.color+'0C'); g.addColorStop(.8,S.color+'06'); g.addColorStop(1,S.color+'00');
-        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(pt.x,pt.y,r2,0,7); ctx.fill();
-      }
+      // 五墨：濕筆飽滿平滑；墨量耗盡或真正疾筆才出飛白
+      const spDry=clamp((sp-.5)/.5,0,1);
+      const dry=clamp(Math.max((.45-ink)/.45, spDry),0,1)*.9;
+      const alpha=clamp((.62+.32*pt.p)*(.35+.65*Math.min(1,ink*2.2)),.07,.96);
+      brushStamp(ctx,pt.x,pt.y,w*.5,ang,alpha);
+      stroke.samples.push({x:pt.x,y:pt.y,ang,w,dry,arc:stroke.arc2});
     }},
   smudge:{ layered:false, spacing:.3,
     draw(ctx,pt){
@@ -547,6 +636,11 @@ function strokeStamp(x,y,p,tilt){
 }
 function strokeMove(x,y,p,tilt){
   if(!stroke) return;
+  // 行筆速度（doc px/ms，EMA 平滑）— 疾筆生飛白、緩筆生暈
+  const now=performance.now();
+  const inst=Math.hypot(x-(stroke.lx??x),y-(stroke.ly??y))/Math.max(1,now-(stroke.tm||now));
+  stroke.speed=(stroke.speed??0)*.7+inst*.3;
+  stroke.tm=now; stroke.lx=x; stroke.ly=y;
   // 平滑
   stroke.sx += (x-stroke.sx)*.42; stroke.sy += (y-stroke.sy)*.42;
   strokeStamp(stroke.sx,stroke.sy,p,tilt);
@@ -563,9 +657,12 @@ function strokeEnd(commit=true){
     stroke=null; S.dirty=true; return;
   }
   if(B.layered){
-    layer.ctx.save();
-    layer.ctx.globalAlpha = B.alpha; layer.ctx.globalCompositeOperation = B.blend||'source-over';
-    layer.ctx.drawImage(strokeCv,0,0); layer.ctx.restore();
+    if(stroke.tool==='brush'){ finishBrushStroke(layer); }
+    else {
+      layer.ctx.save();
+      layer.ctx.globalAlpha = B.alpha; layer.ctx.globalCompositeOperation = B.blend||'source-over';
+      layer.ctx.drawImage(strokeCv,0,0); layer.ctx.restore();
+    }
   }
   // 復原紀錄（只存筆畫範圍）
   const pad=6, b=stroke.bbox;
