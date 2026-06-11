@@ -256,7 +256,7 @@ const S = {
   pencilMode: localStorage.getItem('pencilMode')==='1',
   dirty:false, undo:[], redo:[], saveT:null,
 };
-const cv = $('#cv'), vctx = cv.getContext('2d');
+const cv = $('#cv'), vctx = cv.getContext('2d',{desynchronized:true}) || cv.getContext('2d');
 let strokeCv = document.createElement('canvas'), strokeCtx = strokeCv.getContext('2d');
 let preCv = document.createElement('canvas'), preCtx = preCv.getContext('2d');
 
@@ -320,6 +320,19 @@ function buildTooth(c1,c2,c3,amp){
   }
   return f;
 }
+/* 一維低頻雜訊：沿筆畫弧長取樣 → 寬度與濃度的自然起伏 */
+function makeLF(){
+  const a=new Float32Array(512);
+  for(let i=0;i<512;i++) a[i]=Math.random();
+  for(let p=0;p<3;p++){ const b=a.slice();
+    for(let i=0;i<512;i++) a[i]=(b[(i+511)%512]+b[i]+b[(i+1)%512])/3; }
+  let mn=1,mx=0; for(const v of a){ if(v<mn)mn=v; if(v>mx)mx=v; }
+  for(let i=0;i<512;i++) a[i]=(a[i]-mn)/(mx-mn);
+  return a;
+}
+const LF1=makeLF(), LF2=makeLF();
+function lf(a,t){ let u=t%512; if(u<0)u+=512;
+  const i=Math.floor(u), f=u-i; return a[i]*(1-f)+a[(i+1)%512]*f; }
 let SPK=null, STREAK_INV=null;
 function ensureBase(){
   if(SPK) return;
@@ -368,6 +381,17 @@ function grainTile(color,gradeKey,band){
 }
 const pcv=document.createElement('canvas'); pcv.width=pcv.height=128;
 const px2=pcv.getContext('2d');
+const maskCache={};
+function maskSprite(inner){ // 預渲染圓形遮罩（避免每章建 gradient）
+  const key=Math.round(inner*20);
+  if(maskCache[key]) return maskCache[key];
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const x=c.getContext('2d');
+  const g=x.createRadialGradient(128,128,128*clamp(inner,0,.95),128,128,128);
+  g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(.55,'rgba(0,0,0,.93)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=g; x.fillRect(0,0,256,256);
+  maskCache[key]=c; return c;
+}
 function applyStreaks(d,ang,arc,amount){ // 沿筆畫方向把拖痕「擦」進蓋章
   if(!(amount>0)) return;
   if(!STREAK_INV) ensureBase();
@@ -389,10 +413,8 @@ function pencilStamp(ctx,X,Y,r,alpha,tile,inner,ang,arc,streak){
   const sx0=((ox%TS)+TS)%TS, sy0=((oy%TS)+TS)%TS;
   for(let ty=-sy0; ty<d; ty+=TS) for(let tx=-sx0; tx<d; tx+=TS) px2.drawImage(tile,tx,ty);
   // 偏硬的邊緣遮罩——毛邊交給紙紋與拖痕，而非柔焦
-  const g=px2.createRadialGradient(r,r,Math.max(0,r*inner),r,r,r);
-  g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(.55,'rgba(0,0,0,.92)'); g.addColorStop(1,'rgba(0,0,0,0)');
   px2.globalCompositeOperation='destination-in';
-  px2.fillStyle=g; px2.fillRect(0,0,d,d);
+  px2.drawImage(maskSprite(inner),0,0,d,d);
   applyStreaks(d,ang,arc,streak);
   ctx.globalAlpha=alpha; ctx.drawImage(pcv,0,0,d,d,ox,oy,d,d); ctx.globalAlpha=1;
 }
@@ -406,10 +428,9 @@ function brushStamp(ctx,X,Y,r,ang,alpha){
   px2.save(); px2.translate(d/2,d/2); px2.rotate(ang);
   px2.beginPath(); px2.ellipse(0,0,r*1.3,r*.78,0,0,7); px2.fill();
   px2.restore();
-  const g=px2.createRadialGradient(d/2,d/2,r*.55,d/2,d/2,r*1.32);
-  g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(.82,'rgba(0,0,0,.94)'); g.addColorStop(1,'rgba(0,0,0,0)');
   px2.globalCompositeOperation='destination-in';
-  px2.fillStyle=g; px2.fillRect(0,0,d,d);
+  const mr=r*1.32; // 遮罩外徑
+  px2.drawImage(maskSprite(.42), d/2-mr, d/2-mr, mr*2, mr*2);
   px2.globalCompositeOperation='source-over';
   ctx.globalAlpha=alpha;
   ctx.drawImage(pcv,0,0,d,d,Math.round(X-d/2),Math.round(Y-d/2),d,d);
@@ -532,15 +553,22 @@ const BRUSHES = {
       const dx=pt.x-pv.x, dy=pt.y-pv.y, dl=Math.hypot(dx,dy);
       const ang=(dx||dy)?Math.atan2(dy,dx):(stroke.ang||0);
       stroke.ang=ang; stroke.arc=(stroke.arc||0)+dl; stroke.pv={x:pt.x,y:pt.y};
+      // 沿筆畫的低頻起伏：筆尖切面與手部微壓力 → 寬度±15%、濃度±20%
+      const sd=Math.max(2,S.sizeDoc());
+      const wMod=.85+.3*lf(LF1,stroke.arc/(sd*1.2));
+      const aMod=.8+.4*lf(LF2,stroke.arc/(sd*2));
+      // 速度減淡：疾筆停留短、沉積少（真實石墨物理）
+      const spF=1.1-.4*clamp((stroke.speed||0)/4,0,1);
       const r=Math.min(440, Math.max(.8,
-        S.sizeDoc()*.5*G.size*(.55+.6*pt.p)*(1+tilt*2.8)*(.93+.14*Math.random())));
+        S.sizeDoc()*.5*G.size*(.55+.6*pt.p)*(1+tilt*2.8)*wMod*(.96+.08*Math.random())));
       const p2=clamp(pt.p*(1-.45*tilt),0,1);
       const band=p2<.34?0:p2<.68?1:2;
       const tile=grainTile(S.color,S.grade,band);
-      const alpha=clamp(G.a*(.42+.68*pt.p)*(1-.55*tilt), .05, 1);
+      const alpha=clamp(G.a*(.42+.68*pt.p)*(1-.55*tilt)*aMod*spF, .04, 1);
       const inner=G.soft?.2:(tilt>.3?.25:.62);  // 硬邊緣，毛邊來自紙紋
       const streak=G.soft?.4:(.2+.4*tilt);      // 沿筆方向拖痕
-      const jx=(Math.random()-.5)*r*.08, jy=(Math.random()-.5)*r*.08;
+      const jx=(Math.random()-.5)*r*.05, jy=(Math.random()-.5)*r*.05;
+      stroke.curW=r*1.7;
       pencilStamp(ctx,pt.x+jx,pt.y+jy,r,alpha,tile,inner,ang,stroke.arc,streak);
     }},
   brush:{ layered:true, blend:'multiply', alpha:.92, spacing:.15,
@@ -557,7 +585,7 @@ const BRUSHES = {
       let w=Math.max(.6, S.sizeDoc()*2.1*(.05+1.65*Math.pow(pt.p,1.8)));
       w*=clamp((stroke.arc2||0)/(S.sizeDoc()*1.6),.18,1); // 起筆露鋒（入筆收窄）
       w*=(1-.28*sp);                                       // 疾筆則細
-      stroke.maxW=Math.max(stroke.maxW,w); stroke.lastWb=w;
+      stroke.maxW=Math.max(stroke.maxW,w); stroke.lastWb=w; stroke.curW=w;
       stroke.used+=w*Math.max(dl,.8); stroke.ink=clamp(1-stroke.used/stroke.cap,0,1);
       const ink=stroke.ink;
       // 五墨：濕筆飽滿平滑；墨量耗盡或真正疾筆才出飛白
@@ -616,6 +644,7 @@ function strokeStamp(x,y,p,tilt){
     const w = B.width({p,tilt});
     const sw = stroke.lastW==null ? w : stroke.lastW + (w-stroke.lastW)*.3;
     stroke.lastW = sw;
+    stroke.curW=sw;
     ctx.strokeStyle = S.color; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=Math.max(.5,sw);
     ctx.beginPath(); ctx.moveTo(stroke.last.x,stroke.last.y);
     const mx=(stroke.last.x+x)/2, my=(stroke.last.y+y)/2;
@@ -623,9 +652,11 @@ function strokeStamp(x,y,p,tilt){
     bboxAdd(x,y,sw); bboxAdd(stroke.last.x,stroke.last.y,sw);
   } else {
     const r = S.sizeDoc()*4+6; // 涵蓋傾斜放大後的最大蓋章範圍
-    const step = Math.max(1, S.sizeDoc()*(B.spacing||.4));
+    // 自適應間距：疾筆時略加大（沉積物理＋效能），上限 1.5×
+    const sp01=clamp((stroke.speed||0)/4,0,1);
+    const step = Math.max(1, S.sizeDoc()*(B.spacing||.4)*(1+sp01*.5));
     const dx=x-stroke.last.x, dy=y-stroke.last.y, len=Math.hypot(dx,dy);
-    const n = Math.max(1, Math.floor(len/step));
+    const n = Math.min(80, Math.max(1, Math.floor(len/step)));
     for(let i=1;i<=n;i++){
       const t=i/n, ix=stroke.last.x+dx*t, iy=stroke.last.y+dy*t;
       const ip=stroke.last.p+(p-stroke.last.p)*t;
@@ -636,13 +667,8 @@ function strokeStamp(x,y,p,tilt){
 }
 function strokeMove(x,y,p,tilt){
   if(!stroke) return;
-  // 行筆速度（doc px/ms，EMA 平滑）— 疾筆生飛白、緩筆生暈
-  const now=performance.now();
-  const inst=Math.hypot(x-(stroke.lx??x),y-(stroke.ly??y))/Math.max(1,now-(stroke.tm||now));
-  stroke.speed=(stroke.speed??0)*.7+inst*.3;
-  stroke.tm=now; stroke.lx=x; stroke.ly=y;
-  // 平滑
-  stroke.sx += (x-stroke.sx)*.42; stroke.sy += (y-stroke.sy)*.42;
+  // 平滑（係數調高＝更貼筆尖）
+  stroke.sx += (x-stroke.sx)*.52; stroke.sy += (y-stroke.sy)*.52;
   strokeStamp(stroke.sx,stroke.sy,p,tilt);
   if(performance.now()-stroke.t0>260) stroke.young=false;
   S.dirty=true;
@@ -683,10 +709,10 @@ function strokeEnd(commit=true){
 }
 function doUndo(){ const u=S.undo.pop(); if(!u){toast('沒有可復原的步驟');return;}
   S.doc.layers[u.layer].ctx.putImageData(u.before,u.x,u.y); S.redo.push(u);
-  S.dirty=true; scheduleSave(); refreshLayerThumbs(); toast('復原'); }
+  invalidateCache(); scheduleSave(); refreshLayerThumbs(); toast('復原'); }
 function doRedo(){ const u=S.redo.pop(); if(!u){toast('沒有可重做的步驟');return;}
   S.doc.layers[u.layer].ctx.putImageData(u.after,u.x,u.y); S.undo.push(u);
-  S.dirty=true; scheduleSave(); refreshLayerThumbs(); toast('重做'); }
+  invalidateCache(); scheduleSave(); refreshLayerThumbs(); toast('重做'); }
 
 /* ════════════════ 渲染 ════════════════ */
 function resizeView(){
@@ -701,26 +727,60 @@ function fitDoc(){
   const z = Math.min(innerWidth/d.w, innerHeight/d.h)*.99;
   S.zoom=z; S.panX=(innerWidth-d.w*z)/2; S.panY=(innerHeight-d.h*z)/2; S.dirty=true;
 }
+/* 圖層快取：目前圖層以下/以上各預合成一張 → 繪圖時每幀只畫 3 張大圖 */
+let cacheOK=false, cacheActive=-1;
+const cacheBelow=document.createElement('canvas'), cacheAbove=document.createElement('canvas');
+function invalidateCache(){ cacheOK=false; S.dirty=true; }
+function rebuildLayerCache(){
+  const d=S.doc;
+  if(cacheBelow.width!==d.w||cacheBelow.height!==d.h){
+    cacheBelow.width=cacheAbove.width=d.w; cacheBelow.height=cacheAbove.height=d.h;
+  }
+  const bc=cacheBelow.getContext('2d'), ac=cacheAbove.getContext('2d');
+  bc.clearRect(0,0,d.w,d.h); ac.clearRect(0,0,d.w,d.h);
+  bc.fillStyle=(d.paper&&d.paper.tone)||PAPER; bc.fillRect(0,0,d.w,d.h);
+  d.layers.forEach((L,i)=>{
+    if(!L.visible||i===d.active) return;
+    const t=(i<d.active)?bc:ac;
+    t.globalAlpha=L.opacity; t.drawImage(L.canvas,0,0); t.globalAlpha=1;
+  });
+  cacheOK=true; cacheActive=d.active;
+}
+const TAIL_ALPHA={pen:.85,pencil:.55,marker:.55,water:.22,brush:.85};
 function render(){
   requestAnimationFrame(render);
   if(!S.dirty || !S.doc) return; S.dirty=false;
   const d=S.doc, dpr=cv._dpr;
+  if(!cacheOK||cacheActive!==d.active) rebuildLayerCache();
   vctx.setTransform(1,0,0,1,0,0);
   vctx.fillStyle='#E9E2D5'; vctx.fillRect(0,0,cv.width,cv.height);
   vctx.setTransform(dpr*S.zoom,0,0,dpr*S.zoom,dpr*S.panX,dpr*S.panY);
-  vctx.shadowColor='rgba(38,36,31,.25)'; vctx.shadowBlur=24/S.zoom; vctx.shadowOffsetY=6/S.zoom;
-  vctx.fillStyle=(d.paper&&d.paper.tone)||PAPER; vctx.fillRect(0,0,d.w,d.h);
-  vctx.shadowColor='transparent';
+  if(!stroke){ // canvas 陰影非常昂貴：只在非繪圖時畫
+    vctx.shadowColor='rgba(38,36,31,.25)'; vctx.shadowBlur=24/S.zoom; vctx.shadowOffsetY=6/S.zoom;
+    vctx.fillStyle=(d.paper&&d.paper.tone)||PAPER; vctx.fillRect(0,0,d.w,d.h);
+    vctx.shadowColor='transparent';
+  }
   vctx.save(); vctx.beginPath(); vctx.rect(0,0,d.w,d.h); vctx.clip();
-  d.layers.forEach((L,i)=>{
-    if(!L.visible) return;
+  vctx.drawImage(cacheBelow,0,0);
+  const L=d.layers[d.active];
+  if(L.visible){
     vctx.globalAlpha=L.opacity; vctx.drawImage(L.canvas,0,0); vctx.globalAlpha=1;
-    if(stroke && i===d.active && BRUSHES[stroke.tool].layered){
+    if(stroke && BRUSHES[stroke.tool].layered){
       const B=BRUSHES[stroke.tool];
-      vctx.save(); vctx.globalAlpha=B.alpha*L.opacity; vctx.globalCompositeOperation=B.blend;
+      vctx.save(); vctx.globalAlpha=(B.alpha||1)*L.opacity; vctx.globalCompositeOperation=B.blend||'source-over';
       vctx.drawImage(strokeCv,0,0); vctx.restore();
     }
-  });
+  }
+  // 追筆尾巴：墨水立即接到筆尖，消除感知延遲（下一幀被真筆跡取代）
+  if(stroke && stroke.cursor && TAIL_ALPHA[stroke.tool]){
+    vctx.strokeStyle=S.color; vctx.lineCap='round';
+    vctx.globalAlpha=TAIL_ALPHA[stroke.tool];
+    vctx.lineWidth=Math.max(.8,stroke.curW||2);
+    vctx.beginPath(); vctx.moveTo(stroke.sx,stroke.sy);
+    vctx.lineTo(stroke.cursor.x,stroke.cursor.y); vctx.stroke();
+    vctx.globalAlpha=1;
+  }
+  vctx.drawImage(cacheAbove,0,0);
   vctx.restore();
 }
 requestAnimationFrame(render);
@@ -794,10 +854,25 @@ cv.addEventListener('pointermove', e=>{
     }
   }
   if(e.pointerId!==drawingPID || !stroke) return;
+  // 行筆速度：以「事件層級」計算（合併取樣點共用時間戳，逐點算會灌水）
+  {
+    const now=e.timeStamp||performance.now();
+    const pd=toDoc(e);
+    if(stroke.evT!==undefined){
+      const dt=Math.max(4, now-stroke.evT);
+      const dd=Math.hypot(pd.x-stroke.evX, pd.y-stroke.evY);
+      stroke.speed=(stroke.speed??0)*.6+(dd/dt)*.4; // doc px/ms
+    }
+    stroke.evT=now; stroke.evX=pd.x; stroke.evY=pd.y;
+  }
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
   for(const ev of evs){
     const p=toDoc(ev); strokeMove(p.x,p.y,pressureOf(ev),tiltOf(ev));
   }
+  // 追筆游標：優先用瀏覽器預測點，否則用最新原始點
+  let cx=e;
+  if(e.getPredictedEvents){ const pe=e.getPredictedEvents(); if(pe&&pe.length) cx=pe[pe.length-1]; }
+  if(stroke) stroke.cursor=toDoc(cx);
 },{passive:false});
 
 function endPointer(e){
@@ -843,7 +918,7 @@ function newDocObj(){
 }
 function setupDoc(d){
   if(!d.paper) d.paper={tone:PAPER,tooth:'med'};
-  S.doc=d; S.undo=[]; S.redo=[];
+  S.doc=d; S.undo=[]; S.redo=[]; invalidateCache();
   strokeCv.width=preCv.width=d.w; strokeCv.height=preCv.height=d.h;
   $('#title').textContent=d.name;
   fitDoc(); renderLayers();
@@ -902,13 +977,13 @@ function renderLayers(){
     const col=document.createElement('div'); col.className='col';
     col.innerHTML=`<div class="nm">圖層 ${i+1}</div>`;
     const op=document.createElement('input'); op.type='range'; op.min=0; op.max=100; op.value=Math.round(L.opacity*100);
-    op.addEventListener('input',()=>{ L.opacity=op.value/100; S.dirty=true; scheduleSave(); });
+    op.addEventListener('input',()=>{ L.opacity=op.value/100; invalidateCache(); scheduleSave(); });
     op.addEventListener('pointerdown',e=>e.stopPropagation());
     col.appendChild(op);
     const eye=document.createElement('button'); eye.className='eye'+(L.visible?'':' off');
     eye.innerHTML='<svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
     eye.addEventListener('pointerdown',e=>e.stopPropagation());
-    eye.addEventListener('click',e=>{ e.stopPropagation(); L.visible=!L.visible; S.dirty=true; renderLayers(); scheduleSave(); });
+    eye.addEventListener('click',e=>{ e.stopPropagation(); L.visible=!L.visible; invalidateCache(); renderLayers(); scheduleSave(); });
     row.append(th,col,eye);
     row.addEventListener('click',()=>{ d.active=i; renderLayers(); });
     list.appendChild(row);
@@ -919,14 +994,14 @@ $('#addLayer').addEventListener('click',()=>{
   const d=S.doc;
   if(d.layers.length>=8){ toast('最多 8 個圖層'); return; }
   d.layers.splice(d.active+1,0,makeLayer(d.w,d.h)); d.active++;
-  S.undo=[]; S.redo=[]; renderLayers(); S.dirty=true; scheduleSave();
+  S.undo=[]; S.redo=[]; renderLayers(); invalidateCache(); scheduleSave();
 });
 $('#delLayer').addEventListener('click',()=>{
   const d=S.doc;
   if(d.layers.length===1){ toast('至少保留一個圖層'); return; }
   if(!confirm('刪除目前圖層？此動作無法復原。')) return;
   d.layers.splice(d.active,1); d.active=clamp(d.active-1,0,d.layers.length-1);
-  S.undo=[]; S.redo=[]; renderLayers(); S.dirty=true; scheduleSave();
+  S.undo=[]; S.redo=[]; renderLayers(); invalidateCache(); scheduleSave();
 });
 $('#mergeLayer').addEventListener('click',()=>{
   const d=S.doc;
@@ -936,13 +1011,13 @@ $('#mergeLayer').addEventListener('click',()=>{
   if(top.visible) under.ctx.drawImage(top.canvas,0,0);
   under.ctx.globalAlpha=1;
   d.layers.splice(d.active,1); d.active--;
-  S.undo=[]; S.redo=[]; renderLayers(); S.dirty=true; scheduleSave(); toast('已合併');
+  S.undo=[]; S.redo=[]; renderLayers(); invalidateCache(); scheduleSave(); toast('已合併');
 });
 $('#clearLayer').addEventListener('click',()=>{
   if(!confirm('清除目前圖層內容？')) return;
   const d=S.doc, L=d.layers[d.active];
   L.ctx.clearRect(0,0,d.w,d.h);
-  S.undo=[]; S.redo=[]; renderLayers(); S.dirty=true; scheduleSave();
+  S.undo=[]; S.redo=[]; renderLayers(); invalidateCache(); scheduleSave();
 });
 
 /* ════════════════ 工具列 UI ════════════════ */
@@ -992,14 +1067,14 @@ function renderPaperPanel(){
   TONES.forEach(([lab,c])=>{
     const b=document.createElement('button'); b.style.background=c; b.title=lab;
     if(c.toLowerCase()===p.tone.toLowerCase()) b.classList.add('on');
-    b.addEventListener('click',()=>{ S.doc.paper.tone=c; S.dirty=true; renderPaperPanel(); scheduleSave(); });
+    b.addEventListener('click',()=>{ S.doc.paper.tone=c; invalidateCache(); renderPaperPanel(); scheduleSave(); });
     tn.appendChild(b);
   });
   const th=$('#paperTooths'); th.innerHTML='';
   for(const k in PAPERS){
     const b=document.createElement('button'); b.textContent=PAPERS[k].label;
     if(k===p.tooth) b.classList.add('on');
-    b.addEventListener('click',()=>{ S.doc.paper.tooth=k; S.dirty=true; renderPaperPanel(); scheduleSave(); });
+    b.addEventListener('click',()=>{ S.doc.paper.tooth=k; invalidateCache(); renderPaperPanel(); scheduleSave(); });
     th.appendChild(b);
   }
 }
