@@ -882,8 +882,8 @@ function finishPencilStroke(layer){
   layer.ctx.drawImage(strokeCv,0,0); layer.ctx.restore();
 }
 const BRUSHES = {
-  pencil:{ layered:true, blend:'multiply', alpha:.96, mp:true, spacing:.3,
-    draw(ctx,pt){ // 後備引擎（libmypaint 載入失敗時）
+  pencil:{ layered:true, blend:'multiply', alpha:.96, mp:false, spacing:.3,
+    draw(ctx,pt){ // Shape+Grain 蓋章引擎（紙紋顆粒 × 筆芯 × 壓力）
       const G=GRADES[S.grade], tilt=pt.tilt||0;
       const pv=stroke.pv||stroke.last;
       const dx=pt.x-pv.x, dy=pt.y-pv.y, dl=Math.hypot(dx,dy);
