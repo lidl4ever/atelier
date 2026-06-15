@@ -536,7 +536,7 @@ const DB = {
 };
 
 /* ════════════════ 全域狀態 ════════════════ */
-const APP_VERSION = 'v1.6';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
+const APP_VERSION = 'v1.8';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
 const PAPER = '#FBF8F1';
 const S = {
   doc:null,            // {id,name,w,h,scale,layers:[{canvas,ctx,visible,opacity}],active}
@@ -886,7 +886,7 @@ function finishPencilStroke(layer){
   layer.ctx.drawImage(strokeCv,0,0); layer.ctx.restore();
 }
 const BRUSHES = {
-  pencil:{ layered:true, blend:'multiply', alpha:.96, mp:false, spacing:.3,
+  pencil:{ layered:true, blend:'multiply', alpha:.96, mp:false, spacing:.12,
     draw(ctx,pt){ // Shape+Grain 蓋章引擎（紙紋顆粒 × 筆芯 × 壓力）
       const G=GRADES[S.grade], tilt=pt.tilt||0;
       const pv=stroke.pv||stroke.last;
@@ -899,14 +899,19 @@ const BRUSHES = {
       const aMod=.8+.4*lf(LF2,stroke.arc/(sd*2));
       // 速度減淡：疾筆停留短、沉積少（真實石墨物理）
       const spF=1.1-.4*clamp((stroke.speed||0)/4,0,1);
-      const r=Math.min(440, Math.max(.8,
-        S.sizeDoc()*.5*G.size*(.55+.6*pt.p)*(1+tilt*2.8)*wMod*(.96+.08*Math.random())));
-      const p2=clamp(pt.p*(1-.45*tilt),0,1);
-      const band=p2<.34?0:p2<.68?1:2;
+      // 直立＝尖筆細線；傾斜＝筆芯側面接觸紙面 → 大幅變寬的側鋒陰影（參考 WeTransfer Paper）
+      const tiltW=1+tilt*tilt*13;     // tilt 0→1×、0.5→4.25×、1→14×（滿傾斜＝寬側鋒陰影）
+      const presW=.55+.45*pt.p;       // 壓力對「寬度」影響小（尖筆接觸面小），主要影響濃淡
+      const r=Math.min(460, Math.max(1.2,
+        S.sizeDoc()*.22*G.size*presW*tiltW*wMod*(.96+.08*Math.random())));
+      // 顆粒隨傾斜：直立＝較密實的連續線（尖筆）；傾斜＝較疏的側鋒顆粒
+      const p2=clamp(pt.p,0,1);
+      const band = tilt>.4 ? (p2<.55?0:1) : (p2<.45?1:2);
       const tile=grainTile(S.color,S.grade,band);
-      const alpha=clamp(G.a*(.42+.68*pt.p)*(1-.55*tilt)*aMod*spF, .04, 1);
-      const inner=G.soft?.2:(tilt>.3?.25:.62);  // 硬邊緣，毛邊來自紙紋
-      const streak=G.soft?.4:(.2+.4*tilt);      // 沿筆方向拖痕
+      // 濃淡：直立線實（連續好認），傾斜側鋒每單位面積較淡
+      const alpha=clamp(G.a*(.5+.55*pt.p)*(1-.4*tilt)*aMod*spF*(tilt>.4?1:1.2), .05, 1);
+      const inner=G.soft?.2:(tilt>.4?.24:.66);  // 傾斜柔邊出顆粒；直立硬邊收細
+      const streak=G.soft?.4:(.15+.45*tilt);    // 沿筆方向拖痕（傾斜時明顯）
       const jx=(Math.random()-.5)*r*.05, jy=(Math.random()-.5)*r*.05;
       stroke.curW=r*1.7;
       pencilStamp(ctx,pt.x+jx,pt.y+jy,r,alpha,tile,inner,ang,stroke.arc,streak);
@@ -1000,7 +1005,10 @@ function strokeStamp(x,y,p,tilt){
     const r = S.sizeDoc()*4+6; // 涵蓋傾斜放大後的最大蓋章範圍
     // 自適應間距：疾筆時略加大（沉積物理＋效能），上限 1.5×
     const sp01=clamp((stroke.speed||0)/4,0,1);
-    const step = Math.max(1, S.sizeDoc()*(B.spacing||.4)*(1+sp01*.5));
+    // 鉛筆寬度隨傾斜大幅變動：間距改以「實際筆寬」為基準，細線才連續、寬側鋒才不過度重疊
+    let baseStep = S.sizeDoc()*(B.spacing||.4);
+    if(stroke.tool==='pencil' && stroke.curW) baseStep = stroke.curW*.34;
+    const step = Math.max(1, baseStep*(1+sp01*.5));
     const dx=x-stroke.last.x, dy=y-stroke.last.y, len=Math.hypot(dx,dy);
     const n = Math.min(80, Math.max(1, Math.floor(len/step)));
     for(let i=1;i<=n;i++){
