@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Atelier — GPU 鉛筆測試</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
+    font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  .bar{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translateX(-50%);
+    display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.82);backdrop-filter:blur(8px);
+    border-radius:999px;padding:7px 10px;box-shadow:0 2px 14px rgba(0,0,0,.08);z-index:10;font-size:13px}
+  .bar button{border:0;background:#26241F;color:#fff;border-radius:999px;padding:7px 13px;font-size:13px}
+  .bar .v{color:#8a857c;letter-spacing:.05em;padding:0 4px}
+  .hint{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 14px);left:50%;transform:translateX(-50%);
+    color:#a39d92;font-size:12px;z-index:10;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="bar">
+  <span class="v">GPU 鉛筆 test-g1</span>
+  <button id="clear">清除</button>
+</div>
+<div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
+<script>
+const cv=document.getElementById('c');
+const DPR=Math.min(devicePixelRatio||1,2.5);
+const gl=cv.getContext('webgl2',{alpha:false,antialias:true,preserveDrawingBuffer:true});
+let W=0,H=0;
+function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); cv.width=W; cv.height=H;
+  buildFBO(); redraw(); }
+
+/* ── shaders ── */
+const VS=`#version 300 es
+in vec2 aPos; in float aSide; in float aInk; in float aTilt;
+uniform vec2 uRes;
+out vec2 vW; out float vSide; out float vInk; out float vTilt;
+void main(){ vW=aPos; vSide=aSide; vInk=aInk; vTilt=aTilt;
+  vec2 c=(aPos/uRes)*2.0-1.0; c.y=-c.y; gl_Position=vec4(c,0.,1.); }`;
+const FS=`#version 300 es
+precision highp float;
+in vec2 vW; in float vSide; in float vInk; in float vTilt;
+uniform vec3 uColor; uniform float uScale; uniform float uDark;
+out vec4 frag;
+float hash(vec2 p){ p=fract(p*vec2(127.31,311.7)); p+=dot(p,p+34.21); return fract(p.x*p.y); }
+float vn(vec2 x){ vec2 i=floor(x),f=fract(x);
+  float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
+  vec2 u=f*f*(3.-2.*f); return mix(mix(a,b,u.x),mix(c,d,u.x),u.y); }
+float fbm(vec2 p){ float s=0.,a=.5,n=0.; for(int i=0;i<4;i++){ s+=a*vn(p); n+=a; p*=2.03; a*=.5;} return s/n; }
+float tooth(vec2 w){ vec2 p=w*uScale; float ca=0.866,sa=0.5; p=mat2(ca,-sa,sa,ca)*p; p.x*=0.82;
+  float base=fbm(p); float fine=vn(w*uScale*2.2); return clamp(base*0.55+fine*0.45,0.,1.); }
+void main(){
+  float edge=1.0-abs(vSide);
+  float fw=mix(0.18,0.85,clamp(vTilt,0.,1.));
+  float e=smoothstep(0.0,fw,edge);
+  float t=tooth(vW);
+  float fill=clamp(vInk,0.,1.);
+  float th=mix(0.60,-0.10,fill);
+  float cov=smoothstep(th,th+0.34,t);
+  float a=clamp(cov*e*uDark*0.82,0.,1.);
+  if(a<=0.002) discard;
+  frag=vec4(uColor,a);
+}`;
+/* blit shader: 把 committed 紋理畫到畫面 */
+const BVS=`#version 300 es
+in vec2 p; out vec2 uv; void main(){ uv=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }`;
+const BFS=`#version 300 es
+precision highp float; in vec2 uv; uniform sampler2D tex; out vec4 o;
+void main(){ o=texture(tex,uv); }`;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.warn(gl.getShaderInfoLog(o));return o;}
+function prog(vs,fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.warn(gl.getProgramInfoLog(p));return p;}
+const P=prog(VS,FS), BP=prog(BVS,BFS);
+const aPos=gl.getAttribLocation(P,'aPos'),aSide=gl.getAttribLocation(P,'aSide'),aInk=gl.getAttribLocation(P,'aInk'),aTilt=gl.getAttribLocation(P,'aTilt');
+const bP=gl.createBuffer(),bS=gl.createBuffer(),bI=gl.createBuffer(),bT=gl.createBuffer();
+const bQuad=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,bQuad);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const bpLoc=gl.getAttribLocation(BP,'p');
+gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+
+/* committed FBO（已完成筆畫，透明底） */
+let fbo=null, fboTex=null;
+function buildFBO(){
+  if(fboTex) gl.deleteTexture(fboTex); if(fbo) gl.deleteFramebuffer(fbo);
+  fboTex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,fboTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  fbo=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fboTex,0);
+  gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+const INK=[0.17,0.16,0.14], SCALE=0.5;
+function ribbon(pts){ const N=pts.length,Po=new Float32Array(N*4),S=new Float32Array(N*2),I=new Float32Array(N*2),T=new Float32Array(N*2);
+  for(let i=0;i<N;i++){ const a=pts[Math.max(0,i-1)],b=pts[Math.min(N-1,i+1)];
+    let dx=b.x-a.x,dy=b.y-a.y;const L=Math.hypot(dx,dy)||1;dx/=L;dy/=L;const nx=-dy,ny=dx,hw=pts[i].hw;
+    Po[i*4]=pts[i].x+nx*hw;Po[i*4+1]=pts[i].y+ny*hw;Po[i*4+2]=pts[i].x-nx*hw;Po[i*4+3]=pts[i].y-ny*hw;
+    S[i*2]=1;S[i*2+1]=-1;I[i*2]=I[i*2+1]=pts[i].ink;T[i*2]=T[i*2+1]=pts[i].tilt; }
+  return {Po,S,I,T,n:N*2}; }
+function drawRibbon(pts){ if(pts.length<2)return; const g=ribbon(pts);
+  gl.useProgram(P); gl.uniform2f(gl.getUniformLocation(P,'uRes'),W,H);
+  gl.uniform3f(gl.getUniformLocation(P,'uColor'),INK[0],INK[1],INK[2]);
+  gl.uniform1f(gl.getUniformLocation(P,'uScale'),SCALE); gl.uniform1f(gl.getUniformLocation(P,'uDark'),1.0);
+  function bind(b,d,l,sz){gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,d,gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,sz,gl.FLOAT,false,0,0);}
+  bind(bP,g.Po,aPos,2);bind(bS,g.S,aSide,1);bind(bI,g.I,aInk,1);bind(bT,g.T,aTilt,1);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,g.n); }
+function blitCommitted(){ gl.useProgram(BP); gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,fboTex); gl.uniform1i(gl.getUniformLocation(BP,'tex'),0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bQuad); gl.enableVertexAttribArray(bpLoc); gl.vertexAttribPointer(bpLoc,2,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4); }
+function redraw(){ gl.viewport(0,0,W,H); gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.clearColor(0.984,0.972,0.945,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  blitCommitted(); if(cur && cur.length>1) drawRibbon(cur); }
+
+/* ── 互動 ── */
+let cur=null, sx=0, sy=0;
+function widthInk(p,tilt){
+  const tiltW=1+tilt*tilt*13, presW=.55+.45*p;
+  const hw=Math.max(0.9, 7*presW*tiltW);     // 半寬（px，已含 DPR 由座標決定）
+  const ink=Math.min(1, (0.3+0.7*p));
+  return {hw:hw*DPR, ink, tilt};
+}
+function pt(e){ const x=e.clientX*DPR, y=e.clientY*DPR; return {x,y}; }
+function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
+  const q=pt(e); sx=q.x; sy=q.y; const wi=widthInk(pressure(e),tilt(e));
+  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}]; redraw(); }
+function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
+  const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+  for(const ev of evs){ const q=pt(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
+    const dx=sx-cur[cur.length-1].x, dy=sy-cur[cur.length-1].y;
+    if(dx*dx+dy*dy>=(1.2*DPR)*(1.2*DPR)){ const wi=widthInk(pressure(ev),tilt(ev)); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}); } }
+  redraw(); }
+function up(e){ if(!cur)return; e.preventDefault();
+  if(cur.length>1){ gl.bindFramebuffer(gl.FRAMEBUFFER,fbo); gl.viewport(0,0,W,H); drawRibbon(cur); gl.bindFramebuffer(gl.FRAMEBUFFER,null); }
+  cur=null; redraw(); }
+function pressure(e){ let p=e.pressure; if(p===0||p==null) p=0.5; return Math.max(0.02,Math.min(1,p)); }
+function tilt(e){ return Math.max(0,Math.min(1,Math.hypot(e.tiltX||0,e.tiltY||0)/90)); }
+cv.addEventListener('pointerdown',down,{passive:false});
+cv.addEventListener('pointermove',move,{passive:false});
+cv.addEventListener('pointerup',up,{passive:false});
+cv.addEventListener('pointercancel',up,{passive:false});
+document.getElementById('clear').addEventListener('click',()=>{ buildFBO(); redraw(); });
+addEventListener('resize',resize);
+resize();
+</script>
+</body>
+</html>
