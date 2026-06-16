@@ -536,7 +536,7 @@ const DB = {
 };
 
 /* ════════════════ 全域狀態 ════════════════ */
-const APP_VERSION = 'v1.9-gl';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
+const APP_VERSION = 'v1.8';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
 const PAPER = '#FBF8F1';
 const S = {
   doc:null,            // {id,name,w,h,scale,layers:[{canvas,ctx,visible,opacity}],active}
@@ -963,127 +963,10 @@ const BRUSHES = {
     width(pt){ return S.sizeDoc()*2*(.6+.5*pt.p); }},
 };
 
-/* ════════════════ WebGL2 鉛筆引擎 ════════════════
-   單層連續 ribbon（三角帶）＋ 逐像素程序化石墨紙紋（紙面錨定）。
-   優於 Canvas2D 蓋章：無間距斷點、無平鋪接縫、紙紋無限解析度、傾斜即時。
-   失敗時 glPencil.ok=false → 自動回退 Canvas2D 蓋章引擎。 */
-const glPencil = (function(){
-  let cv=null, gl=null, prog=null, ok=false;
-  let aPos,aSide,aTilt,aInk, bPos,bSide,bTilt,bInk, uRes,uColor,uFreq,uLo,uHi,uDark,uContrast;
-  const VS=`#version 300 es
-  in vec2 aPos; in float aSide; in float aTilt; in float aInk;
-  uniform vec2 uRes;
-  out vec2 vWorld; out float vSide; out float vTilt; out float vInk;
-  void main(){ vWorld=aPos; vSide=aSide; vTilt=aTilt; vInk=aInk;
-    vec2 c=(aPos/uRes)*2.0-1.0; c.y=-c.y; gl_Position=vec4(c,0.0,1.0); }`;
-  const FS=`#version 300 es
-  precision highp float;
-  in vec2 vWorld; in float vSide; in float vTilt; in float vInk;
-  uniform vec3 uColor; uniform float uFreq, uLo, uHi, uDark, uContrast;
-  out vec4 frag;
-  float hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
-  float vn(vec2 x){ vec2 i=floor(x),f=fract(x);
-    float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
-    vec2 u=f*f*(3.0-2.0*f); return mix(mix(a,b,u.x),mix(c,d,u.x),u.y); }
-  float grain(vec2 w){ return 0.55*vn(w*uFreq)+0.30*vn(w*uFreq*2.3)+0.15*vn(w*uFreq*4.7); }
-  void main(){
-    float edge=1.0-abs(vSide);
-    // 直立＝硬邊細線（band 小）；傾斜＝柔邊出顆粒（band 大）
-    float band=mix(0.12,0.62,smoothstep(0.0,0.6,vTilt));
-    float e=smoothstep(0.0,band,edge);
-    float n=grain(vWorld);
-    n=clamp((n-0.5)*1.7+0.5,0.0,1.0);            // 拉開紙紋對比（多八度平均會壓縮）
-    // 紙齒：石墨先沾紙峰；傾斜時門檻降低→更多顆粒露出
-    float lo=uLo-vTilt*0.10, hi=uHi+vTilt*0.04;
-    float cov=smoothstep(lo,hi,n);
-    cov=pow(cov,uContrast);
-    // 顆粒強度隨傾斜：直立＝近實心連續線（尖筆）；傾斜＝全紙齒顆粒（側鋒）
-    float gAmt=smoothstep(0.05,0.5,vTilt);
-    cov=mix(1.0,cov,mix(0.28,1.0,gAmt));
-    float a=clamp(cov*e*uDark*vInk,0.0,1.0);
-    if(a<=0.003) discard;
-    frag=vec4(uColor,a);
-  }`;
-  function sh(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
-    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.warn('GL shader',gl.getShaderInfoLog(s)); return null;} return s; }
-  function init(){
-    try{
-      cv=document.createElement('canvas');
-      gl=cv.getContext('webgl2',{alpha:true,premultipliedAlpha:false,antialias:true,preserveDrawingBuffer:true});
-      if(!gl) return false;
-      const vs=sh(gl.VERTEX_SHADER,VS), fs=sh(gl.FRAGMENT_SHADER,FS); if(!vs||!fs) return false;
-      prog=gl.createProgram(); gl.attachShader(prog,vs); gl.attachShader(prog,fs); gl.linkProgram(prog);
-      if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){ console.warn('GL link',gl.getProgramInfoLog(prog)); return false; }
-      aPos=gl.getAttribLocation(prog,'aPos'); aSide=gl.getAttribLocation(prog,'aSide');
-      aTilt=gl.getAttribLocation(prog,'aTilt'); aInk=gl.getAttribLocation(prog,'aInk');
-      uRes=gl.getUniformLocation(prog,'uRes'); uColor=gl.getUniformLocation(prog,'uColor');
-      uFreq=gl.getUniformLocation(prog,'uFreq'); uLo=gl.getUniformLocation(prog,'uLo');
-      uHi=gl.getUniformLocation(prog,'uHi'); uDark=gl.getUniformLocation(prog,'uDark');
-      uContrast=gl.getUniformLocation(prog,'uContrast');
-      bPos=gl.createBuffer(); bSide=gl.createBuffer(); bTilt=gl.createBuffer(); bInk=gl.createBuffer();
-      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-      ok=true; return true;
-    }catch(e){ console.warn('glPencil init failed',e); return false; }
-  }
-  function ensure(w,h){ if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; } }
-  // pts: [{x,y,hw,tilt,ink}]  builds variable-width triangle-strip ribbon
-  function render(pts, color, freq, lo, hi, dark, contrast){
-    if(!ok||pts.length<2) { gl&&gl.clear(gl.COLOR_BUFFER_BIT); return; }
-    const N=pts.length, pos=new Float32Array(N*4), sd=new Float32Array(N*2), tl=new Float32Array(N*2), nk=new Float32Array(N*2);
-    for(let i=0;i<N;i++){
-      const a=pts[Math.max(0,i-1)], b=pts[Math.min(N-1,i+1)];
-      let dx=b.x-a.x, dy=b.y-a.y; const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L;
-      const nx=-dy, ny=dx, hw=pts[i].hw;
-      pos[i*4]=pts[i].x+nx*hw; pos[i*4+1]=pts[i].y+ny*hw;
-      pos[i*4+2]=pts[i].x-nx*hw; pos[i*4+3]=pts[i].y-ny*hw;
-      sd[i*2]=1; sd[i*2+1]=-1; tl[i*2]=tl[i*2+1]=pts[i].tilt; nk[i*2]=nk[i*2+1]=pts[i].ink;
-    }
-    gl.viewport(0,0,cv.width,cv.height);
-    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(prog);
-    gl.uniform2f(uRes,cv.width,cv.height);
-    const cr=parseInt(color.slice(1,3),16)/255, cg=parseInt(color.slice(3,5),16)/255, cb=parseInt(color.slice(5,7),16)/255;
-    gl.uniform3f(uColor,cr,cg,cb); gl.uniform1f(uFreq,freq); gl.uniform1f(uLo,lo);
-    gl.uniform1f(uHi,hi); gl.uniform1f(uDark,dark); gl.uniform1f(uContrast,contrast);
-    function bind(buf,data,loc,size){ gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
-      gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0); }
-    bind(bPos,pos,aPos,2); bind(bSide,sd,aSide,1); bind(bTilt,tl,aTilt,1); bind(bInk,nk,aInk,1);
-    gl.drawArrays(gl.TRIANGLE_STRIP,0,N*2);
-  }
-  const okInit=init();
-  return { get ok(){return ok;}, get canvas(){return cv;}, ensure, render };
-})();
-
 /* 進行中的筆畫 */
 let stroke = null; // {tool,pts,last,lastW,bbox,targetCtx}
 function sizeDocFactor(){ return S.doc ? S.doc.scale : 2; }
 S.sizeDoc = () => (S.sizes[stroke?stroke.tool:S.tool] ?? S.size) * sizeDocFactor();
-
-/* GL 鉛筆：每筆的著色參數（grade 決定濃淡/紙齒對比，紙張決定顆粒頻率） */
-function glPencilParams(){
-  const G=GRADES[S.grade]||GRADES.HB, tk=paperOf().tooth||'med';
-  const freq = tk==='rough'?0.045 : tk==='smooth'?0.085 : 0.062;
-  // GL 單層 ribbon 無蓋章疊加 → 提高 per-pass 濃度；硬筆芯(H 系)較淡較疏、軟筆芯(B 系)較濃較實
-  const lo=clamp(0.52-G.a*0.32,.12,.5), hi=lo+0.30;
-  return { color:S.color, freq, lo, hi,
-           dark: clamp(G.a*1.6,.28,1.0),
-           contrast: clamp(1.25-G.a*0.55,.55,1.15) };
-}
-/* GL 鉛筆：把一個取樣點轉成 ribbon 點（半寬＋濃度乘數） */
-function glPencilPush(x,y,p,tilt){
-  const G=GRADES[S.grade]||GRADES.HB;
-  const tiltW=1+tilt*tilt*13, presW=.55+.45*p;
-  const hw=Math.min(460, Math.max(.9, S.sizeDoc()*.22*G.size*presW*tiltW));
-  const spF=1.1-.4*clamp((stroke.speed||0)/4,0,1);
-  const ink=clamp((.55+.5*p)*(1-.4*tilt)*(tilt<=.4?1.2:1)*spF, .05, 1.3);
-  stroke.glPts.push({x,y,hw,tilt,ink});
-  stroke.curW=hw*2;
-  bboxAdd(x,y,hw+3);
-}
-function glPencilRenderLive(){
-  const pr=stroke.glParams;
-  glPencil.render(stroke.glPts, pr.color, pr.freq, pr.lo, pr.hi, pr.dark, pr.contrast);
-}
 
 function strokeBegin(x,y,p,tilt,tool){
   tool = tool || S.tool;
@@ -1095,11 +978,7 @@ function strokeBegin(x,y,p,tilt,tool){
   if(B.erase){ ctx.globalCompositeOperation='destination-out'; }
   stroke = { tool, ctx, last:{x,y,p,tilt}, sx:x, sy:y, lastW:null,
     bbox:{x0:x,y0:y,x1:x,y1:y}, t0:performance.now(), young:true, pointer:null };
-  if(tool==='pencil' && glPencil.ok){ // WebGL2 鉛筆引擎
-    stroke.gl=true; glPencil.ensure(d.w,d.h);
-    stroke.glPts=[]; stroke.glParams=glPencilParams();
-    glPencilPush(x,y,p,tilt);
-  } else if(B.mp && mpAvailable()){ // MyPaint 引擎路徑
+  if(B.mp && mpAvailable()){ // MyPaint 引擎路徑
     stroke.mp=true; stroke.mpTilt=tilt;
     stroke.mpPad=S.sizes.pencil*(d.scale||2)*(3+tilt*3)+24;
     const mp=mpConfig(tilt);
@@ -1152,13 +1031,6 @@ function strokeMove(x,y,p,tilt,dtS,tx,ty){
   }
   // 平滑（係數調高＝更貼筆尖）
   stroke.sx += (x-stroke.sx)*.52; stroke.sy += (y-stroke.sy)*.52;
-  if(stroke.gl){ // WebGL2 鉛筆：收平滑後的點，render() 重建整條 ribbon
-    const dx=stroke.sx-stroke.last.x, dy=stroke.sy-stroke.last.y;
-    if(dx*dx+dy*dy>=1) glPencilPush(stroke.sx,stroke.sy,p,tilt);
-    stroke.last={x:stroke.sx,y:stroke.sy,p,tilt};
-    if(performance.now()-stroke.t0>260) stroke.young=false;
-    S.dirty=true; return;
-  }
   strokeStamp(stroke.sx,stroke.sy,p,tilt);
   if(performance.now()-stroke.t0>260) stroke.young=false;
   S.dirty=true;
@@ -1172,12 +1044,7 @@ function strokeEnd(commit=true){
     layer.ctx.drawImage(preCv,0,0); layer.ctx.restore();
     stroke=null; S.dirty=true; return;
   }
-  if(stroke.gl){ // WebGL2 鉛筆：渲染整條 ribbon → 以 multiply 合成到圖層
-    glPencilRenderLive();
-    layer.ctx.save();
-    layer.ctx.globalAlpha = B.alpha; layer.ctx.globalCompositeOperation = B.blend||'multiply';
-    layer.ctx.drawImage(glPencil.canvas,0,0); layer.ctx.restore();
-  } else if(B.layered){
+  if(B.layered){
     if(stroke.tool==='brush'){ finishBrushStroke(layer); }
     else if(stroke.mp){ finishPencilStroke(layer); }
     else {
@@ -1262,12 +1129,7 @@ function render(){
   const L=d.layers[d.active];
   if(L.visible){
     vctx.globalAlpha=L.opacity; vctx.drawImage(L.canvas,0,0); vctx.globalAlpha=1;
-    if(stroke && stroke.gl){ // WebGL2 鉛筆即時預覽：重建整條 ribbon，multiply 疊上
-      const B=BRUSHES.pencil;
-      glPencilRenderLive();
-      vctx.save(); vctx.globalAlpha=(B.alpha||1)*L.opacity; vctx.globalCompositeOperation=B.blend||'multiply';
-      vctx.drawImage(glPencil.canvas,0,0); vctx.restore();
-    } else if(stroke && BRUSHES[stroke.tool].layered){
+    if(stroke && BRUSHES[stroke.tool].layered){
       const B=BRUSHES[stroke.tool];
       let src=strokeCv;
       if(stroke.mp){ // 預覽也套紙紋（避免提筆瞬間質感跳變）
