@@ -30,7 +30,7 @@ const cv=document.getElementById('c');
 const DPR=Math.min(devicePixelRatio||1,2.5);
 const gl=cv.getContext('webgl2',{alpha:false,antialias:true,preserveDrawingBuffer:true});
 let W=0,H=0;
-const INK=[0.17,0.16,0.14], SCALE=0.5;
+const INK=[0.17,0.16,0.14], SCALE=1.35;
 
 /* ── dab shader（圓點蓋章，逐像素程序化石墨紙紋）── */
 const VS=`#version 300 es
@@ -53,9 +53,9 @@ float hash(vec2 p){ p=fract(p*vec2(127.31,311.7)); p+=dot(p,p+34.21); return fra
 float vn(vec2 x){ vec2 i=floor(x),f=fract(x);
   float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
   vec2 u=f*f*(3.-2.*f); return mix(mix(a,b,u.x),mix(c,d,u.x),u.y); }
-float fbm(vec2 p){ float s=0.,a=.5,n=0.; for(int i=0;i<4;i++){ s+=a*vn(p); n+=a; p*=2.03; a*=.5;} return s/n; }
-float tooth(vec2 w){ vec2 p=w*uScale; float ca=0.866,sa=0.5; p=mat2(ca,-sa,sa,ca)*p; p.x*=0.82;
-  float base=fbm(p); float fine=vn(w*uScale*2.2); return clamp(base*0.55+fine*0.45,0.,1.); }
+float fbm(vec2 p){ float s=0.,a=.5,n=0.; for(int i=0;i<5;i++){ s+=a*vn(p); n+=a; p*=2.07; a*=.5;} return s/n; }
+float tooth(vec2 w){ vec2 p=w*uScale; float ca=0.866,sa=0.5; p=mat2(ca,-sa,sa,ca)*p; p.x*=0.85;
+  float v=fbm(p); v=0.5+(v-0.5)*1.15; return clamp(v,0.,1.); }
 void main(){
   float r=length(vLocal);
   if(r>1.0) discard;
@@ -65,9 +65,12 @@ void main(){
   // 沾峰填谷
   float t=tooth(vWorld);
   float fill=clamp(vInk,0.,1.);
-  float th=mix(0.60,-0.10,fill);
-  float cov=smoothstep(th,th+0.34,t);
-  float a=clamp(cov*fall*0.95,0.,1.);
+  // 密度沉積：色調由壓力決定（平滑）；紙齒振幅隨密度衰減（深處填滿、淺處顯細齒）
+  float density=pow(fill,0.82);
+  float amp=(1.0-density)*0.78;
+  float toothMod=1.0-amp*(1.0-t);
+  float cov=density*toothMod;
+  float a=clamp(cov*fall,0.,1.);
   if(a<=0.003) discard;
   frag=vec4(uColor,a);
 }`;
