@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Atelier — GPU 鉛筆測試 g4</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
+    font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  .bar{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translateX(-50%);
+    display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.82);backdrop-filter:blur(8px);
+    border-radius:999px;padding:7px 10px;box-shadow:0 2px 14px rgba(0,0,0,.08);z-index:10;font-size:13px}
+  .bar button{border:0;background:#26241F;color:#fff;border-radius:999px;padding:7px 13px;font-size:13px}
+  .bar .v{color:#8a857c;letter-spacing:.05em;padding:0 4px}
+  .hint{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 14px);left:50%;transform:translateX(-50%);
+    color:#a39d92;font-size:12px;z-index:10;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="bar">
+  <span class="v">GPU 鉛筆 test-g4 (baked grain)</span>
+  <button id="clear">清除</button>
+</div>
+<div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
+<script>
+const cv=document.getElementById('c');
+const DPR=Math.min(devicePixelRatio||1,2.5);
+const gl=cv.getContext('webgl2',{alpha:false,antialias:true,preserveDrawingBuffer:true});
+let W=0,H=0;
+const INK=[0.17,0.16,0.14];
+
+/* ───────────────────────────────────────────────────────────────────
+   可調旋鈕（在裝置上對著 Paper 微調）—— 細紙 vs 粗紙就靠這幾個
+   GRAIN_PX    : 一張紙紋貼圖鋪滿多少 device px。越小＝紙紋越細。
+   GRAIN_DEPTH : 紙齒深度。小＝細滑紙（平滑、少洞）、大＝粗水彩紙（顆粒分明）。
+   EDGE_BITE   : 邊緣咬入量。讓筆畫邊緣碎成顆粒而非均勻變淡。
+   CONTRAST    : 烘焙紙紋的對比。低＝勻、高＝分明。
+   ─────────────────────────────────────────────────────────────────── */
+const GRAIN_PX    = 200 * DPR / 2.5;  // 細紙：小貼圖、細顆粒
+const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
+const EDGE_BITE   = 0.60;
+const CONTRAST    = 1.30;             // 細紙：低對比、勻
+
+/* ── dab shader：圓點蓋章；紙紋來自烘焙好的「可被 mip 過濾」貼圖 ──
+   核心修正 vs g2/g3：
+   1) 紙紋不再用逐 fragment 的 fbm（在 1.35 scale 下整段都落在次像素 → 嚴重 aliasing＝
+      你看到的「粗粒電視雜訊」）。改成預烘焙的細顆粒貼圖 + mipmap LINEAR，
+      縮小時自動過濾，得到 Paper 那種「細而勻」的顆粒。
+   2) 覆蓋採「門檻模型」：輕＝只有紙峰露出（稀疏點），重＝填滿（谷底仍留微齒）。
+   3) 邊緣不再是均勻變淡（airbrush 暈圈），而是把筆刷包絡折進門檻 →
+      邊緣自然碎成顆粒（Paper 的羽化邊）。*/
+const VS=`#version 300 es
+in vec2 aCorner;        // 單位四邊形 -1..1（每頂點）
+in vec2 aCenter;        // dab 中心（doc px，每實例）
+in float aRad, aInk, aTilt;
+uniform vec2 uRes;
+out vec2 vLocal; out vec2 vWorld; out float vInk; out float vTilt;
+void main(){
+  vLocal=aCorner; vInk=aInk; vTilt=aTilt;
+  vec2 pos=aCenter+aCorner*aRad; vWorld=pos;
+  vec2 c=(pos/uRes)*2.0-1.0; c.y=-c.y; gl_Position=vec4(c,0.,1.);
+}`;
+const FS=`#version 300 es
+precision highp float;
+in vec2 vLocal; in vec2 vWorld; in float vInk; in float vTilt;
+uniform vec3 uColor; uniform sampler2D uGrain; uniform float uGrainPx;
+out vec4 frag;
+void main(){
+  float r=length(vLocal);
+  if(r>1.0) discard;
+  // 筆刷包絡：直立硬（細線俐落）、傾斜柔（側鋒粉感）
+  float soft=mix(0.30,0.94,clamp(vTilt,0.,1.));
+  float env=1.0-smoothstep(1.0-soft,1.0,r);          // 1 中心 → 0 邊緣
+
+  // 紙紋取樣（紙錨定）：旋轉 30°＋輕微拉長＝纖維方向；REPEAT+mipmap 自動抗鋸齒
+  vec2 gw=mat2(0.866,-0.5,0.5,0.866)*vWorld; gw.y*=0.85;
+  float t=texture(uGrain, gw/uGrainPx).r;            // 0..1 細紙紋
+
+  // ── 減去式沉積模型（取代硬門檻）──
+  // 目標濃度＝壓力；紙齒從濃度「咬掉」一塊：紙谷(t小)咬得多、紙峰(t大)咬得少。
+  // GRAIN_DEPTH 小 → 咬得淺 → 中間調平滑連續（細紙）；大 → 顆粒分明（粗紙）。
+  // 因為 t 是 mip 過濾後的平滑場，cov 沿著等高線平滑過渡 → 顆粒邊自帶抗鋸齒、不再是離散硬點。
+  float local=clamp(vInk,0.,1.);
+  float bite=(1.0-t)*${GRAIN_DEPTH} + (1.0-env)*${EDGE_BITE};  // 邊緣多咬 → 羽化成顆粒
+  float cov=clamp(local-bite, 0.0, 1.0);
+
+  if(cov<=0.003) discard;
+  frag=vec4(uColor*cov,cov);   // 預乘 alpha（premultiplied）——整條 FBO 管線一致，避免提筆後變淡
+}`;
+/* blit shader */
+const BVS=`#version 300 es
+in vec2 p; out vec2 uv; void main(){ uv=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }`;
+const BFS=`#version 300 es
+precision highp float; in vec2 uv; uniform sampler2D tex; uniform float uAlpha; out vec4 o;
+void main(){ vec4 c=texture(tex,uv); o=vec4(c.rgb, c.a*uAlpha); }`;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.warn(gl.getShaderInfoLog(o));return o;}
+function prog(vs,fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.warn(gl.getProgramInfoLog(p));return p;}
+const P=prog(VS,FS), BP=prog(BVS,BFS);
+const aCorner=gl.getAttribLocation(P,'aCorner'),aCenter=gl.getAttribLocation(P,'aCenter'),
+      aRad=gl.getAttribLocation(P,'aRad'),aInk=gl.getAttribLocation(P,'aInk'),aTilt=gl.getAttribLocation(P,'aTilt');
+const uRes=gl.getUniformLocation(P,'uRes'),uColor=gl.getUniformLocation(P,'uColor'),
+      uGrain=gl.getUniformLocation(P,'uGrain'),uGrainPx=gl.getUniformLocation(P,'uGrainPx');
+
+/* ── 烘焙無縫平鋪的細紙紋貼圖（CPU，一次性）──
+   多 octave value-noise；以 fine octave 為主 → 細而勻。
+   各 octave 用 grid index mod G 取樣 → 無縫平鋪。最後做對比拉伸。 */
+function makeGrainTexture(N){
+  const data=new Uint8Array(N*N);
+  let seed=0x9e3779b9>>>0;
+  const rnd=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+  // grid=每軸格數（越大＝越細）。細紙：幾乎全押在高頻細顆粒，
+  // 只留極小權重的低頻當「紙張起伏」——這是去掉粗水彩紙塊感的關鍵。
+  const octs=[{g:N>>1,a:0.62},{g:Math.round(N/3.4),a:0.28},{g:N>>3,a:0.10}];
+  const grids=octs.map(o=>{const arr=new Float32Array(o.g*o.g);for(let i=0;i<arr.length;i++)arr[i]=rnd();return arr;});
+  const sm=t=>t*t*(3-2*t);
+  let tot=0; octs.forEach(o=>tot+=o.a);
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    let v=0;
+    for(let k=0;k<octs.length;k++){
+      const G=octs[k].g, grid=grids[k];
+      const fx=x/N*G, fy=y/N*G;
+      const ix=Math.floor(fx), iy=Math.floor(fy);
+      const x0=((ix%G)+G)%G, y0=((iy%G)+G)%G, x1=(x0+1)%G, y1=(y0+1)%G;
+      const tx=sm(fx-ix), ty=sm(fy-iy);
+      const a=grid[y0*G+x0], b=grid[y0*G+x1], c=grid[y1*G+x0], d=grid[y1*G+x1];
+      const top=a+(b-a)*tx, bot=c+(d-c)*tx;
+      v+=octs[k].a*(top+(bot-top)*ty);
+    }
+    v/=tot;
+    v=0.5+(v-0.5)*CONTRAST;                 // 對比拉伸
+    data[y*N+x]=Math.max(0,Math.min(255,Math.round(v*255)));
+  }
+  const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,N,N,0,gl.RED,gl.UNSIGNED_BYTE,data);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  return tex;
+}
+const grainTex=makeGrainTexture(512);
+
+// 單位四邊形
+const quad=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,quad);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 1,-1, -1,1, 1,1]),gl.STATIC_DRAW);
+const bInst=gl.createBuffer();
+const bQuad=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,bQuad);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const bpLoc=gl.getAttribLocation(BP,'p'), uTex=gl.getUniformLocation(BP,'tex'), uAlpha=gl.getUniformLocation(BP,'uAlpha');
+
+/* 兩個 FBO：committed（已完成筆畫）、strokeBuf（當前筆，MAX 累積） */
+let fbo=null,fboTex=null, sbo=null,sboTex=null;
+function mkFBO(){ const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {f,tex}; }
+function buildFBOs(){ if(fboTex)gl.deleteTexture(fboTex); if(fbo)gl.deleteFramebuffer(fbo);
+  if(sboTex)gl.deleteTexture(sboTex); if(sbo)gl.deleteFramebuffer(sbo);
+  let a=mkFBO(); fbo=a.f; fboTex=a.tex; let b=mkFBO(); sbo=b.f; sboTex=b.tex; }
+function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); cv.width=W; cv.height=H; buildFBOs(); redraw(); }
+
+/* 由筆畫點重採樣成 dab 實例（中心、半徑、ink、tilt） */
+function buildDabs(pts){
+  if(pts.length<1) return new Float32Array(0);
+  const inst=[];
+  function push(x,y,r,ink,tilt){ inst.push(x,y,r,ink,tilt); }
+  if(pts.length===1){ const p=pts[0]; push(p.x,p.y,p.hw,p.ink,p.tilt); }
+  let carry=0;
+  for(let i=1;i<pts.length;i++){
+    const a=pts[i-1], b=pts[i];
+    let dx=b.x-a.x, dy=b.y-a.y; const seg=Math.hypot(dx,dy); if(seg<1e-4) continue;
+    const ux=dx/seg, uy=dy/seg;
+    let d=carry;
+    while(d<=seg){
+      const t=d/seg;
+      const r=a.hw+(b.hw-a.hw)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
+      push(a.x+ux*d, a.y+uy*d, r, ink, tilt);
+      const sp=Math.max(0.8, r*0.28);   // 間距＝半徑的 0.28，密集連續
+      d+=sp;
+    }
+    carry=d-seg;
+  }
+  return new Float32Array(inst);
+}
+function drawDabs(instData, targetFBO){
+  const nDab=instData.length/5; if(nDab<1) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO); gl.viewport(0,0,W,H);
+  gl.useProgram(P); gl.uniform2f(uRes,W,H); gl.uniform3f(uColor,INK[0],INK[1],INK[2]);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,grainTex);
+  gl.uniform1i(uGrain,0); gl.uniform1f(uGrainPx,GRAIN_PX);
+  gl.bindBuffer(gl.ARRAY_BUFFER,quad); gl.enableVertexAttribArray(aCorner);
+  gl.vertexAttribPointer(aCorner,2,gl.FLOAT,false,0,0); gl.vertexAttribDivisor(aCorner,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bInst); gl.bufferData(gl.ARRAY_BUFFER,instData,gl.DYNAMIC_DRAW);
+  const st=20; // 5 floats
+  gl.enableVertexAttribArray(aCenter); gl.vertexAttribPointer(aCenter,2,gl.FLOAT,false,st,0); gl.vertexAttribDivisor(aCenter,1);
+  gl.enableVertexAttribArray(aRad); gl.vertexAttribPointer(aRad,1,gl.FLOAT,false,st,8); gl.vertexAttribDivisor(aRad,1);
+  gl.enableVertexAttribArray(aInk); gl.vertexAttribPointer(aInk,1,gl.FLOAT,false,st,12); gl.vertexAttribDivisor(aInk,1);
+  gl.enableVertexAttribArray(aTilt); gl.vertexAttribPointer(aTilt,1,gl.FLOAT,false,st,16); gl.vertexAttribDivisor(aTilt,1);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,nDab);
+  gl.vertexAttribDivisor(aCorner,0);
+}
+function blit(tex,alpha){ gl.useProgram(BP); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.uniform1i(uTex,0); gl.uniform1f(uAlpha,alpha);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bQuad); gl.enableVertexAttribArray(bpLoc); gl.vertexAttribPointer(bpLoc,2,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4); }
+
+function redraw(){
+  // 1) 當前筆 → strokeBuf（MAX，避免重疊變黑）
+  gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+  if(cur && cur.length>=1){ gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); drawDabs(buildDabs(cur), sbo); gl.blendEquation(gl.FUNC_ADD); }
+  // 2) 畫面：紙底 + committed + strokeBuf
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H);
+  gl.clearColor(0.984,0.972,0.945,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+  blit(fboTex,1.0); blit(sboTex,1.0);
+}
+function commitStroke(){
+  if(!cur||cur.length<1) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); drawDabs(buildDabs(cur), sbo); gl.blendEquation(gl.FUNC_ADD);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo); gl.viewport(0,0,W,H);
+  gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); blit(sboTex,1.0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+
+/* ── 互動 ── */
+let cur=null, sx=0, sy=0;
+function widthInk(p,tilt){
+  const tiltW=1+tilt*tilt*12, presW=.5+.5*p;
+  const hw=Math.max(0.9, 6.5*presW*tiltW)*DPR;
+  let ink=0.16+0.84*p;          // 比 g3 更寬的動態範圍（輕觸更淡）
+  ink*=(1-0.22*tilt);           // 側鋒較淡
+  return {hw,ink:Math.min(1,ink),tilt};
+}
+function pos(e){ return {x:e.clientX*DPR, y:e.clientY*DPR}; }
+function pressure(e){ let p=e.pressure; if(p===0||p==null)p=0.5; return Math.max(0.02,Math.min(1,p)); }
+function tilt(e){ return Math.max(0,Math.min(1,Math.hypot(e.tiltX||0,e.tiltY||0)/90)); }
+function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
+  const q=pos(e); sx=q.x; sy=q.y; const wi=widthInk(pressure(e),tilt(e));
+  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}]; redraw(); }
+function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
+  const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+  for(const ev of evs){ const q=pos(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
+    const last=cur[cur.length-1], dx=sx-last.x, dy=sy-last.y;
+    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(pressure(ev),tilt(ev)); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}); } }
+  redraw(); }
+function up(e){ if(!cur)return; e.preventDefault(); commitStroke(); cur=null; redraw(); }
+cv.addEventListener('pointerdown',down,{passive:false});
+cv.addEventListener('pointermove',move,{passive:false});
+cv.addEventListener('pointerup',up,{passive:false});
+cv.addEventListener('pointercancel',up,{passive:false});
+document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); redraw(); });
+addEventListener('resize',resize);
+resize();
+</script>
+</body>
+</html>
