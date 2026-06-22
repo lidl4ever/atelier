@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v7 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v8 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v7 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v8 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -44,6 +44,9 @@ const GRAIN_PX    = 200 * DPR / 2.5;  // 細紙：小貼圖、細顆粒
 const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
 const EDGE_BITE   = 0.60;
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
+// 邊緣柔度（dab 剖面）：小＝平頂、邊界乾淨利落（Paper 風）；大＝高斯柔焦、發散（airbrush）
+const EDGE_SOFT_TIP  = 0.22;          // 直立筆尖的邊緣柔度
+const EDGE_SOFT_FLAT = 0.34;          // 躺平側鋒的邊緣柔度（從 0.94 大幅收窄＝乾淨邊）
 // 真實筆寬校準（iPad ≈132 CSS ppi → device px/mm）。直徑以 mm 計，貼近真鉛筆。
 const PX_PER_MM   = 132 * DPR / 25.4; // ≈10.4 device px/mm @DPR2(264ppi)
 const NIB_MIN_MM  = 0.32;             // 最輕觸線寬（尖端直徑 mm）
@@ -83,9 +86,9 @@ out vec4 frag;
 void main(){
   float r=length(vLocal);
   if(r>1.0) discard;
-  // 筆刷包絡：直立硬（細線俐落）、傾斜柔（側鋒粉感）
-  float soft=mix(0.30,0.94,clamp(vTilt,0.,1.));
-  float env=1.0-smoothstep(1.0-soft,1.0,r);          // 1 中心 → 0 邊緣
+  // 筆刷包絡：平頂＋窄邊（邊界乾淨，邊緣顆粒由 EDGE_BITE 咬碎）
+  float soft=mix(${EDGE_SOFT_TIP},${EDGE_SOFT_FLAT},clamp(vTilt,0.,1.));
+  float env=1.0-smoothstep(1.0-soft,1.0,r);          // 1 中心(平頂) → 0 邊緣
 
   // 紙紋取樣（紙錨定）：旋轉 30°＋輕微拉長＝纖維方向；REPEAT+mipmap 自動抗鋸齒
   vec2 gw=mat2(0.866,-0.5,0.5,0.866)*vWorld; gw.y*=0.85;
