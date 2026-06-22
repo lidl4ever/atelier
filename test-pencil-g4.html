@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v8 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v9 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v8 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v9 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -43,6 +43,7 @@ const INK=[0.17,0.16,0.14];
 const GRAIN_PX    = 200 * DPR / 2.5;  // 細紙：小貼圖、細顆粒
 const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
 const EDGE_BITE   = 0.60;
+const STROKE_OPACITY = 0.55;          // 單筆整體不透明度：<1＝半透明、疊加才看得出層次（真鉛筆感）
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
 // 邊緣柔度（dab 剖面）：小＝平頂、邊界乾淨利落（Paper 風）；大＝高斯柔焦、發散（airbrush）
 const EDGE_SOFT_TIP  = 0.22;          // 直立筆尖的邊緣柔度
@@ -53,7 +54,7 @@ const NIB_MIN_MM  = 0.32;             // 最輕觸線寬（尖端直徑 mm）
 const NIB_MAX_MM  = 0.77;             // 最重壓線寬（尖端直徑 mm）
 const TILT_BROAD_MM = 23.5;           // 完全躺平的側鋒額外鋪寬（mm）→ 躺平 ~24mm
 const ALT_FLAT_DEG  = 25;             // Pencil 高度角 ≤ 此值＝視為完全躺平（吃滿鋪寬）；越大越早變寬
-const TILT_CURVE    = 1.5;            // 鋪寬曲線：1=線性、2=偏尾段；越小中段越早變寬
+const TILT_CURVE    = 2.0;            // 鋪寬曲線：越大＝近直立更細、broaden 集中到躺平端
 /* 寬度規格（直徑，校準目標 @264ppi）：
    直立尖端 0.33–0.77mm（壓力）｜中等傾斜 ~8mm｜放斜 ~14mm｜躺平 ~24mm
    傾斜訊號用 altitudeAngle（真實高度角），非 tiltX/Y。tilt = (90-高度角)/(90-ALT_FLAT_DEG)
@@ -100,7 +101,7 @@ void main(){
   // 因為 t 是 mip 過濾後的平滑場，cov 沿著等高線平滑過渡 → 顆粒邊自帶抗鋸齒、不再是離散硬點。
   float local=clamp(vInk,0.,1.);
   float bite=(1.0-t)*${GRAIN_DEPTH} + (1.0-env)*${EDGE_BITE};  // 邊緣多咬 → 羽化成顆粒
-  float cov=clamp(local-bite, 0.0, 1.0);
+  float cov=clamp(local-bite, 0.0, 1.0) * ${STROKE_OPACITY};  // 半透明：疊加才變深
 
   if(cov<=0.003) discard;
   frag=vec4(uColor*cov,cov);   // 預乘 alpha（premultiplied）——整條 FBO 管線一致，避免提筆後變淡
@@ -274,8 +275,10 @@ function dbgShow(e){
   const altDeg=hasAlt?e.altitudeAngle*180/Math.PI:90-Math.min(90,Math.hypot(e.tiltX||0,e.tiltY||0));
   if(altDeg<minAlt)minAlt=altDeg;
   const p=pressure(e), tl=tilt(e), wi=widthInk(p,tl);
+  const hasAzi=e.azimuthAngle!=null;
+  const aziDeg=hasAzi?(e.azimuthAngle*180/Math.PI).toFixed(0)+'°':'—';
   dbgEl.textContent=(hasAlt?'alt':'⚠後備')+' '+altDeg.toFixed(0)+'° (最平 '+minAlt.toFixed(0)+'°) · tilt '+tl.toFixed(2)
-    +' · 寬 '+(wi.hw*2/PX_PER_MM).toFixed(1)+'mm · 壓 '+p.toFixed(2)+' · hyp '+Math.hypot(e.tiltX||0,e.tiltY||0).toFixed(0);
+    +' · 寬 '+(wi.hw*2/PX_PER_MM).toFixed(1)+'mm · 壓 '+p.toFixed(2)+' · '+(hasAzi?'azi':'⚠無azi')+' '+aziDeg;
 }
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
   const q=pos(e); sx=q.x; sy=q.y; const wi=widthInk(pressure(e),tilt(e));
