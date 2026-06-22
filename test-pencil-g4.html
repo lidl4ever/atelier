@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v10 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v11 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v10 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v11 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -43,7 +43,8 @@ const INK=[0.17,0.16,0.14];
 const GRAIN_PX    = 200 * DPR / 2.5;  // 細紙：小貼圖、細顆粒
 const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
 const EDGE_BITE   = 0.60;
-const STROKE_OPACITY = 0.55;          // 單筆整體不透明度：<1＝半透明、疊加才看得出層次（真鉛筆感）
+const DAB_FLOW    = 0.10;             // 每 dab 沉積量（加成疊印）：小=單筆淡、重疊才變深（顯現層次）
+const EDGE_GRAD   = 0.35;             // 側鋒斜向漸層：筆芯側=全濃 → 另一側=此比例（小=對比強）
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
 // 邊緣柔度（dab 剖面）：小＝平頂、邊界乾淨利落（Paper 風）；大＝高斯柔焦、發散（airbrush）
 const EDGE_SOFT_TIP  = 0.22;          // 直立筆尖的邊緣柔度
@@ -53,7 +54,7 @@ const PX_PER_MM   = 132 * DPR / 25.4; // ≈10.4 device px/mm @DPR2(264ppi)
 const NIB_MIN_MM  = 0.32;             // 最輕觸線寬（尖端直徑 mm）
 const NIB_MAX_MM  = 0.77;             // 最重壓線寬（尖端直徑 mm）
 const TILT_BROAD_MM = 23.5;           // 完全躺平的側鋒額外鋪寬（mm）→ 躺平 ~24mm
-const ALT_TIP_DEG   = 60;             // 高度角 ≥ 此值＝維持最細筆尖（細線平台區）；自然握姿不變粗
+const ALT_TIP_DEG   = 50;             // 高度角 ≥ 此值＝維持最細筆尖（細線平台區）；自然握姿不變粗
 const ALT_FLAT_DEG  = 25;             // Pencil 高度角 ≤ 此值＝視為完全躺平（吃滿鋪寬）；越大越早變寬
 const TILT_CURVE    = 2.0;            // 鋪寬曲線：越大＝近直立更細、broaden 集中到躺平端
 /* 寬度規格（直徑，校準目標 @264ppi）：
@@ -73,17 +74,17 @@ const TILT_CURVE    = 2.0;            // 鋪寬曲線：越大＝近直立更細
 const VS=`#version 300 es
 in vec2 aCorner;        // 單位四邊形 -1..1（每頂點）
 in vec2 aCenter;        // dab 中心（doc px，每實例）
-in float aRad, aInk, aTilt;
+in float aRad, aInk, aTilt, aAzi;
 uniform vec2 uRes;
-out vec2 vLocal; out vec2 vWorld; out float vInk; out float vTilt;
+out vec2 vLocal; out vec2 vWorld; out float vInk; out float vTilt; out float vAzi;
 void main(){
-  vLocal=aCorner; vInk=aInk; vTilt=aTilt;
+  vLocal=aCorner; vInk=aInk; vTilt=aTilt; vAzi=aAzi;
   vec2 pos=aCenter+aCorner*aRad; vWorld=pos;
   vec2 c=(pos/uRes)*2.0-1.0; c.y=-c.y; gl_Position=vec4(c,0.,1.);
 }`;
 const FS=`#version 300 es
 precision highp float;
-in vec2 vLocal; in vec2 vWorld; in float vInk; in float vTilt;
+in vec2 vLocal; in vec2 vWorld; in float vInk; in float vTilt; in float vAzi;
 uniform vec3 uColor; uniform sampler2D uGrain; uniform float uGrainPx;
 out vec4 frag;
 void main(){
@@ -101,9 +102,13 @@ void main(){
   // 目標濃度＝壓力；紙齒從濃度「咬掉」一塊：紙谷(t小)咬得多、紙峰(t大)咬得少。
   // GRAIN_DEPTH 小 → 咬得淺 → 中間調平滑連續（細紙）；大 → 顆粒分明（粗紙）。
   // 因為 t 是 mip 過濾後的平滑場，cov 沿著等高線平滑過渡 → 顆粒邊自帶抗鋸齒、不再是離散硬點。
-  float local=clamp(vInk,0.,1.);
+  // 斜向漸層（筆芯側深→另一側淡），僅傾斜側鋒時生效；along 沿筆方位 azimuth
+  vec2 adir=vec2(cos(vAzi),sin(vAzi));
+  float along=clamp(dot(vLocal,adir)*0.5+0.5, 0.0, 1.0);
+  float lateral=mix(1.0, mix(1.0,${EDGE_GRAD},along), clamp(vTilt,0.,1.));
+  float local=clamp(vInk,0.,1.)*lateral;
   float bite=(1.0-t)*${GRAIN_DEPTH} + (1.0-env)*${EDGE_BITE};  // 邊緣多咬 → 羽化成顆粒
-  float cov=clamp(local-bite, 0.0, 1.0) * ${STROKE_OPACITY};  // 半透明：疊加才變深
+  float cov=clamp(local-bite, 0.0, 1.0) * ${DAB_FLOW};  // 加成疊印：單 dab 沉積少、重疊才深
 
   if(cov<=0.003) discard;
   frag=vec4(uColor*cov,cov);   // 預乘 alpha（premultiplied）——整條 FBO 管線一致，避免提筆後變淡
@@ -120,7 +125,8 @@ function prog(vs,fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_S
   if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.warn(gl.getProgramInfoLog(p));return p;}
 const P=prog(VS,FS), BP=prog(BVS,BFS);
 const aCorner=gl.getAttribLocation(P,'aCorner'),aCenter=gl.getAttribLocation(P,'aCenter'),
-      aRad=gl.getAttribLocation(P,'aRad'),aInk=gl.getAttribLocation(P,'aInk'),aTilt=gl.getAttribLocation(P,'aTilt');
+      aRad=gl.getAttribLocation(P,'aRad'),aInk=gl.getAttribLocation(P,'aInk'),aTilt=gl.getAttribLocation(P,'aTilt'),
+      aAzi=gl.getAttribLocation(P,'aAzi');
 const uRes=gl.getUniformLocation(P,'uRes'),uColor=gl.getUniformLocation(P,'uColor'),
       uGrain=gl.getUniformLocation(P,'uGrain'),uGrainPx=gl.getUniformLocation(P,'uGrainPx');
 
@@ -192,18 +198,21 @@ function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); 
 function buildDabs(pts){
   if(pts.length<1) return new Float32Array(0);
   const inst=[];
-  function push(x,y,r,ink,tilt){ inst.push(x,y,r,ink,tilt); }
-  if(pts.length===1){ const p=pts[0]; push(p.x,p.y,p.hw,p.ink,p.tilt); }
+  function push(x,y,r,ink,tilt,azi){ inst.push(x,y,r,ink,tilt,azi); }
+  if(pts.length===1){ const p=pts[0]; push(p.x,p.y,p.hw,p.ink,p.tilt,p.azi); }
   let carry=0;
   for(let i=1;i<pts.length;i++){
     const a=pts[i-1], b=pts[i];
     let dx=b.x-a.x, dy=b.y-a.y; const seg=Math.hypot(dx,dy); if(seg<1e-4) continue;
     const ux=dx/seg, uy=dy/seg;
+    // azimuth 以方向向量內插（避免 -π/π 接縫跳變）
+    const cax=Math.cos(a.azi), say=Math.sin(a.azi), cbx=Math.cos(b.azi), sby=Math.sin(b.azi);
     let d=carry;
     while(d<=seg){
       const t=d/seg;
       const r=a.hw+(b.hw-a.hw)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
-      push(a.x+ux*d, a.y+uy*d, r, ink, tilt);
+      const azi=Math.atan2(say+(sby-say)*t, cax+(cbx-cax)*t);
+      push(a.x+ux*d, a.y+uy*d, r, ink, tilt, azi);
       const sp=Math.max(0.8, r*0.28);   // 間距＝半徑的 0.28，密集連續
       d+=sp;
     }
@@ -212,7 +221,7 @@ function buildDabs(pts){
   return new Float32Array(inst);
 }
 function drawDabs(instData, targetFBO){
-  const nDab=instData.length/5; if(nDab<1) return;
+  const nDab=instData.length/6; if(nDab<1) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO); gl.viewport(0,0,W,H);
   gl.useProgram(P); gl.uniform2f(uRes,W,H); gl.uniform3f(uColor,INK[0],INK[1],INK[2]);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,grainTex);
@@ -220,11 +229,12 @@ function drawDabs(instData, targetFBO){
   gl.bindBuffer(gl.ARRAY_BUFFER,quad); gl.enableVertexAttribArray(aCorner);
   gl.vertexAttribPointer(aCorner,2,gl.FLOAT,false,0,0); gl.vertexAttribDivisor(aCorner,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,bInst); gl.bufferData(gl.ARRAY_BUFFER,instData,gl.DYNAMIC_DRAW);
-  const st=20; // 5 floats
+  const st=24; // 6 floats
   gl.enableVertexAttribArray(aCenter); gl.vertexAttribPointer(aCenter,2,gl.FLOAT,false,st,0); gl.vertexAttribDivisor(aCenter,1);
   gl.enableVertexAttribArray(aRad); gl.vertexAttribPointer(aRad,1,gl.FLOAT,false,st,8); gl.vertexAttribDivisor(aRad,1);
   gl.enableVertexAttribArray(aInk); gl.vertexAttribPointer(aInk,1,gl.FLOAT,false,st,12); gl.vertexAttribDivisor(aInk,1);
   gl.enableVertexAttribArray(aTilt); gl.vertexAttribPointer(aTilt,1,gl.FLOAT,false,st,16); gl.vertexAttribDivisor(aTilt,1);
+  gl.enableVertexAttribArray(aAzi); gl.vertexAttribPointer(aAzi,1,gl.FLOAT,false,st,20); gl.vertexAttribDivisor(aAzi,1);
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,nDab);
   gl.vertexAttribDivisor(aCorner,0);
 }
@@ -236,7 +246,7 @@ function blit(tex,alpha){ gl.useProgram(BP); gl.activeTexture(gl.TEXTURE0); gl.b
 function redraw(){
   // 1) 當前筆 → strokeBuf（MAX，避免重疊變黑）
   gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  if(cur && cur.length>=1){ gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); drawDabs(buildDabs(cur), sbo); gl.blendEquation(gl.FUNC_ADD); }
+  if(cur && cur.length>=1){ gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); drawDabs(buildDabs(cur), sbo); }
   // 2) 畫面：紙底 + committed + strokeBuf
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H);
   gl.clearColor(0.984,0.972,0.945,1); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -246,7 +256,7 @@ function redraw(){
 function commitStroke(){
   if(!cur||cur.length<1) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); drawDabs(buildDabs(cur), sbo); gl.blendEquation(gl.FUNC_ADD);
+  gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); drawDabs(buildDabs(cur), sbo);
   gl.bindFramebuffer(gl.FRAMEBUFFER,fbo); gl.viewport(0,0,W,H);
   gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); blit(sboTex,1.0);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
@@ -264,6 +274,7 @@ function widthInk(p,tilt){
 }
 function pos(e){ return {x:e.clientX*DPR, y:e.clientY*DPR}; }
 function pressure(e){ let p=e.pressure; if(p===0||p==null)p=0.5; return Math.max(0.02,Math.min(1,p)); }
+function azim(e){ return e.azimuthAngle!=null ? e.azimuthAngle : 0; }   // 筆方位角（弧度），用於側鋒漸層方向
 function tilt(e){
   // 真實高度角優先：90°=直立 → 0；ALT_FLAT_DEG=躺平 → 1。tiltX/Y 僅作後備估計。
   let altDeg;
@@ -284,12 +295,12 @@ function dbgShow(e){
 }
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
   const q=pos(e); sx=q.x; sy=q.y; const wi=widthInk(pressure(e),tilt(e));
-  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}]; dbgShow(e); redraw(); }
+  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(e)}]; dbgShow(e); redraw(); }
 function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
   const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
   for(const ev of evs){ const q=pos(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
     const last=cur[cur.length-1], dx=sx-last.x, dy=sy-last.y;
-    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(pressure(ev),tilt(ev)); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}); } }
+    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(pressure(ev),tilt(ev)); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(ev)}); } }
   dbgShow(e); redraw(); }
 function up(e){ if(!cur)return; e.preventDefault(); commitStroke(); cur=null; redraw(); }
 cv.addEventListener('pointerdown',down,{passive:false});
