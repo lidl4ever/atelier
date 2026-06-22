@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v4</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v5</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v4 · 2026-06-22</span>
+  <span class="v">GPU 鉛筆 g4 · v5 · 2026-06-22</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -47,11 +47,13 @@ const CONTRAST    = 1.30;             // 細紙：低對比、勻
 const PX_PER_MM   = 132 * DPR / 25.4; // ≈10.4 device px/mm @DPR2(264ppi)
 const NIB_MIN_MM  = 0.32;             // 最輕觸線寬（尖端直徑 mm）
 const NIB_MAX_MM  = 0.77;             // 最重壓線寬（尖端直徑 mm）
-const TILT_BROAD_MM = 10.0;           // 完全放斜的側鋒額外鋪寬（mm）
-const TILT_REF_DEG  = 62;             // 視為「完全躺平」的傾斜角；越小→越容易吃滿鋪寬
+const TILT_BROAD_MM = 10.0;           // 完全躺平的側鋒額外鋪寬（mm）
+const ALT_FLAT_DEG  = 25;             // Pencil 高度角 ≤ 此值＝視為完全躺平（吃滿鋪寬）；越大越早變寬
+const TILT_CURVE    = 1.5;            // 鋪寬曲線：1=線性、2=偏尾段；越小中段越早變寬
 /* 寬度規格（直徑，校準目標 @264ppi）：
-   直立尖端 0.33–0.77mm（壓力）｜半斜 ~3mm｜放斜 5–8mm｜躺平 ~10mm
-   widthMM = 尖端 + TILT_BROAD_MM × tilt²（tilt = 傾斜角/TILT_REF_DEG，clamp 0..1）*/
+   直立尖端 0.33–0.77mm（壓力）｜中等傾斜 ~4.5mm｜放斜 7mm｜躺平 ~10mm
+   傾斜訊號用 altitudeAngle（真實高度角），非 tiltX/Y。tilt = (90-高度角)/(90-ALT_FLAT_DEG)
+   widthMM = 尖端 + TILT_BROAD_MM × tilt^TILT_CURVE，clamp 0..1 */
 
 /* ── dab shader：圓點蓋章；紙紋來自烘焙好的「可被 mip 過濾」貼圖 ──
    核心修正 vs g2/g3：
@@ -247,7 +249,7 @@ function commitStroke(){
 let cur=null, sx=0, sy=0;
 function widthInk(p,tilt){
   const diaMM=NIB_MIN_MM+(NIB_MAX_MM-NIB_MIN_MM)*p;  // 壓力 → 尖端直徑(mm)
-  const widthMM=diaMM + TILT_BROAD_MM*tilt*tilt;      // 傾斜額外鋪寬（削尖鉛筆側鋒）
+  const widthMM=diaMM + TILT_BROAD_MM*Math.pow(tilt,TILT_CURVE);  // 傾斜額外鋪寬（削尖鉛筆側鋒）
   const hw=Math.max(0.6*DPR, 0.5*PX_PER_MM*widthMM);
   let ink=0.16+0.84*p;          // 比 g3 更寬的動態範圍（輕觸更淡）
   ink*=(1-0.22*tilt);           // 側鋒較淡
@@ -255,7 +257,13 @@ function widthInk(p,tilt){
 }
 function pos(e){ return {x:e.clientX*DPR, y:e.clientY*DPR}; }
 function pressure(e){ let p=e.pressure; if(p===0||p==null)p=0.5; return Math.max(0.02,Math.min(1,p)); }
-function tilt(e){ return Math.max(0,Math.min(1,Math.hypot(e.tiltX||0,e.tiltY||0)/TILT_REF_DEG)); }
+function tilt(e){
+  // 真實高度角優先：90°=直立 → 0；ALT_FLAT_DEG=躺平 → 1。tiltX/Y 僅作後備估計。
+  let altDeg;
+  if(e.altitudeAngle!=null) altDeg=e.altitudeAngle*180/Math.PI;
+  else altDeg=90-Math.min(90,Math.hypot(e.tiltX||0,e.tiltY||0));
+  return Math.max(0,Math.min(1,(90-altDeg)/(90-ALT_FLAT_DEG)));
+}
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
   const q=pos(e); sx=q.x; sy=q.y; const wi=widthInk(pressure(e),tilt(e));
   cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}]; redraw(); }
