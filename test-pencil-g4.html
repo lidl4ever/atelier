@@ -45,8 +45,9 @@ const EDGE_BITE   = 0.60;
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
 // 真實筆寬校準（iPad ≈132 CSS ppi → device px/mm）。直徑以 mm 計，貼近真鉛筆。
 const PX_PER_MM   = 132 * DPR / 25.4; // ≈10.4 device px/mm @DPR2(264ppi)
-const NIB_MIN_MM  = 0.45;             // 最輕觸線寬（直徑 mm）
-const NIB_MAX_MM  = 1.10;             // 最重壓線寬（直徑 mm）
+const NIB_MIN_MM  = 0.32;             // 最輕觸線寬（尖端直徑 mm）
+const NIB_MAX_MM  = 0.77;             // 最重壓線寬（尖端直徑 mm）
+const TILT_BROAD_MM = 9.0;            // 完全放斜的側鋒鋪寬（mm）削尖鉛筆躺平
 
 /* ── dab shader：圓點蓋章；紙紋來自烘焙好的「可被 mip 過濾」貼圖 ──
    核心修正 vs g2/g3：
@@ -241,9 +242,9 @@ function commitStroke(){
 /* ── 互動 ── */
 let cur=null, sx=0, sy=0;
 function widthInk(p,tilt){
-  const diaMM=NIB_MIN_MM+(NIB_MAX_MM-NIB_MIN_MM)*p;  // 壓力 → 真實直徑(mm)
-  const tiltW=1+tilt*tilt*9;                          // 側鋒鋪寬畫陰影
-  const hw=Math.max(0.6*DPR, diaMM*0.5*PX_PER_MM*tiltW);
+  const diaMM=NIB_MIN_MM+(NIB_MAX_MM-NIB_MIN_MM)*p;  // 壓力 → 尖端直徑(mm)
+  const widthMM=diaMM + TILT_BROAD_MM*tilt*tilt;      // 傾斜額外鋪寬（削尖鉛筆側鋒）
+  const hw=Math.max(0.6*DPR, 0.5*PX_PER_MM*widthMM);
   let ink=0.16+0.84*p;          // 比 g3 更寬的動態範圍（輕觸更淡）
   ink*=(1-0.22*tilt);           // 側鋒較淡
   return {hw,ink:Math.min(1,ink),tilt};
