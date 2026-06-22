@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v6 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v7 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v6 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v7 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -48,11 +48,11 @@ const CONTRAST    = 1.30;             // 細紙：低對比、勻
 const PX_PER_MM   = 132 * DPR / 25.4; // ≈10.4 device px/mm @DPR2(264ppi)
 const NIB_MIN_MM  = 0.32;             // 最輕觸線寬（尖端直徑 mm）
 const NIB_MAX_MM  = 0.77;             // 最重壓線寬（尖端直徑 mm）
-const TILT_BROAD_MM = 10.0;           // 完全躺平的側鋒額外鋪寬（mm）
+const TILT_BROAD_MM = 23.5;           // 完全躺平的側鋒額外鋪寬（mm）→ 躺平 ~24mm
 const ALT_FLAT_DEG  = 25;             // Pencil 高度角 ≤ 此值＝視為完全躺平（吃滿鋪寬）；越大越早變寬
 const TILT_CURVE    = 1.5;            // 鋪寬曲線：1=線性、2=偏尾段；越小中段越早變寬
 /* 寬度規格（直徑，校準目標 @264ppi）：
-   直立尖端 0.33–0.77mm（壓力）｜中等傾斜 ~4.5mm｜放斜 7mm｜躺平 ~10mm
+   直立尖端 0.33–0.77mm（壓力）｜中等傾斜 ~8mm｜放斜 ~14mm｜躺平 ~24mm
    傾斜訊號用 altitudeAngle（真實高度角），非 tiltX/Y。tilt = (90-高度角)/(90-ALT_FLAT_DEG)
    widthMM = 尖端 + TILT_BROAD_MM × tilt^TILT_CURVE，clamp 0..1 */
 
