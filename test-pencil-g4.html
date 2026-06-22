@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v5</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v6 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,10 +21,11 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v5 · 2026-06-22</span>
+  <span class="v">GPU 鉛筆 g4 · v6 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
+<div id="dbg" style="position:fixed;top:calc(env(safe-area-inset-top) + 52px);left:50%;transform:translateX(-50%);font:12px ui-monospace,SFMono-Regular,monospace;color:#444;background:rgba(255,255,255,.9);padding:4px 10px;border-radius:8px;z-index:10;white-space:nowrap;box-shadow:0 1px 6px rgba(0,0,0,.06)">—（畫一筆看數值）</div>
 <script>
 const cv=document.getElementById('c');
 const DPR=Math.min(devicePixelRatio||1,2.5);
@@ -264,21 +265,30 @@ function tilt(e){
   else altDeg=90-Math.min(90,Math.hypot(e.tiltX||0,e.tiltY||0));
   return Math.max(0,Math.min(1,(90-altDeg)/(90-ALT_FLAT_DEG)));
 }
+let minAlt=90; const dbgEl=document.getElementById('dbg');
+function dbgShow(e){
+  const hasAlt=e.altitudeAngle!=null;
+  const altDeg=hasAlt?e.altitudeAngle*180/Math.PI:90-Math.min(90,Math.hypot(e.tiltX||0,e.tiltY||0));
+  if(altDeg<minAlt)minAlt=altDeg;
+  const p=pressure(e), tl=tilt(e), wi=widthInk(p,tl);
+  dbgEl.textContent=(hasAlt?'alt':'⚠後備')+' '+altDeg.toFixed(0)+'° (最平 '+minAlt.toFixed(0)+'°) · tilt '+tl.toFixed(2)
+    +' · 寬 '+(wi.hw*2/PX_PER_MM).toFixed(1)+'mm · 壓 '+p.toFixed(2)+' · hyp '+Math.hypot(e.tiltX||0,e.tiltY||0).toFixed(0);
+}
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
   const q=pos(e); sx=q.x; sy=q.y; const wi=widthInk(pressure(e),tilt(e));
-  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}]; redraw(); }
+  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}]; dbgShow(e); redraw(); }
 function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
   const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
   for(const ev of evs){ const q=pos(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
     const last=cur[cur.length-1], dx=sx-last.x, dy=sy-last.y;
     if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(pressure(ev),tilt(ev)); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt}); } }
-  redraw(); }
+  dbgShow(e); redraw(); }
 function up(e){ if(!cur)return; e.preventDefault(); commitStroke(); cur=null; redraw(); }
 cv.addEventListener('pointerdown',down,{passive:false});
 cv.addEventListener('pointermove',move,{passive:false});
 cv.addEventListener('pointerup',up,{passive:false});
 cv.addEventListener('pointercancel',up,{passive:false});
-document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); redraw(); });
+document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); minAlt=90; redraw(); });
 addEventListener('resize',resize);
 resize();
 </script>
