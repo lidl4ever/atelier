@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v14 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v15 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v14 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v15 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -45,6 +45,7 @@ const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
 const EDGE_BITE   = 0.60;
 const DAB_FLOW    = 0.045;            // 每 dab 沉積量（加成疊印）：小=單筆淡、重疊才變深（顯現層次）
 const EDGE_GRAD   = 0.35;             // 側鋒斜向漸層：筆芯側=全濃 → 另一側=此比例（小=對比強）
+const SMOOTH_LEN_PX = 9;              // 寬度/濃度沿弧長平滑長度(device px)：壓掉壓力尖刺串珠；大=更平滑
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
 // 邊緣柔度（dab 剖面）：小＝平頂、邊界乾淨利落（Paper 風）；大＝高斯柔焦、發散（airbrush）
 const EDGE_SOFT_TIP  = 0.22;          // 直立筆尖的邊緣柔度
@@ -200,7 +201,7 @@ function buildDabs(pts){
   const inst=[];
   function push(x,y,r,ink,tilt,azi){ inst.push(x,y,r,ink,tilt,azi); }
   if(pts.length===1){ const p=pts[0]; push(p.x,p.y,p.hw,p.ink,p.tilt,p.azi); }
-  let carry=0;
+  let carry=0, smR=null, smInk=null;
   for(let i=1;i<pts.length;i++){
     const a=pts[i-1], b=pts[i];
     let dx=b.x-a.x, dy=b.y-a.y; const seg=Math.hypot(dx,dy); if(seg<1e-4) continue;
@@ -212,8 +213,11 @@ function buildDabs(pts){
       const t=d/seg;
       const r=a.hw+(b.hw-a.hw)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
       const azi=Math.atan2(say+(sby-say)*t, cax+(cbx-cax)*t);
-      push(a.x+ux*d, a.y+uy*d, r, ink, tilt, azi);
-      const sp=Math.max(0.2, r*0.12);   // 間距＝半徑的 0.12（夠密，加成下不串珠）；下限 0.2，最細尖也順
+      if(smR===null){ smR=r; smInk=ink; }
+      const sp=Math.max(0.2, smR*0.12);   // 間距＝半徑的 0.12（夠密，加成下不串珠）；下限 0.2
+      const k=Math.min(1, sp/SMOOTH_LEN_PX);  // 距離域平滑：沿弧長壓掉壓力尖刺，與速度/密度無關
+      smR+=(r-smR)*k; smInk+=(ink-smInk)*k;
+      push(a.x+ux*d, a.y+uy*d, smR, smInk, tilt, azi);
       d+=sp;
     }
     carry=d-seg;
