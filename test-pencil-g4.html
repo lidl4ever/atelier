@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v16 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v17 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -22,8 +22,8 @@
 <canvas id="c"></canvas>
 <canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v16 · debug</span>
-  <button id="mark">標記:開</button>
+  <span class="v">GPU 鉛筆 g4 · v17 · debug</span>
+  <button id="mark">標記:關</button>
   <button id="blend">疊加</button>
   <button id="clear">清除</button>
 </div>
@@ -37,12 +37,12 @@ let W=0,H=0;
 const INK=[0.17,0.16,0.14];
 /* ── debug 診斷層 ── */
 const ov=document.getElementById('ov'); const octx=ov.getContext('2d');
-let showMarks=true, USE_MAX=false, allPts=[];   // allPts: 已提交筆畫的取樣點 {x,y,pr}
+let showMarks=false, USE_MAX=false, allPts=[];  // allPts: 已提交筆畫的取樣點 {x,y,pr}
 function drawOverlay(){
   octx.clearRect(0,0,ov.width,ov.height);
   if(!showMarks) return;
   const dot=(p,col)=>{ octx.fillStyle=col; octx.beginPath();
-    octx.arc(p.x, p.y, 1.2*DPR+3*DPR*(p.pr||0), 0, 6.283); octx.fill(); };
+    octx.arc(p.x, p.y, 1.0*DPR, 0, 6.283); octx.fill(); };  // 小點，不蓋住線
   for(const p of allPts) dot(p,'rgba(220,30,30,0.85)');     // 紅＝已提交取樣點，大小∝壓力
   if(cur) for(const p of cur) dot(p,'rgba(20,90,230,0.9)');  // 藍＝當前筆
 }
@@ -209,6 +209,24 @@ function buildFBOs(){ if(fboTex)gl.deleteTexture(fboTex); if(fbo)gl.deleteFrameb
   let a=mkFBO(); fbo=a.f; fboTex=a.tex; let b=mkFBO(); sbo=b.f; sboTex=b.tex; }
 function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); cv.width=W; cv.height=H; ov.width=W; ov.height=H; buildFBOs(); redraw(); }
 
+/* Catmull-Rom 路徑平滑：稀疏折線 → 平順曲線，消除轉角加成堆積（串珠） */
+function cmr(p0,p1,p2,p3,t){const t2=t*t,t3=t2*t;
+  return 0.5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3);}
+function smoothPath(pts){
+  if(pts.length<3) return pts;
+  const out=[];
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||pts[i+1];
+    const segLen=Math.hypot(p2.x-p1.x,p2.y-p1.y);
+    const steps=Math.max(1,Math.ceil(segLen/3));   // 每 ~3px 一個平滑子點
+    for(let s=0;s<steps;s++){ const t=s/steps;
+      out.push({x:cmr(p0.x,p1.x,p2.x,p3.x,t), y:cmr(p0.y,p1.y,p2.y,p3.y,t),
+        hw:p1.hw+(p2.hw-p1.hw)*t, ink:p1.ink+(p2.ink-p1.ink)*t,
+        tilt:p1.tilt+(p2.tilt-p1.tilt)*t, azi:p1.azi, pr:p1.pr+(p2.pr-p1.pr)*t}); }
+  }
+  out.push(pts[pts.length-1]);
+  return out;
+}
 /* 由筆畫點重採樣成 dab 實例（中心、半徑、ink、tilt） */
 function buildDabs(pts){
   if(pts.length<1) return new Float32Array(0);
@@ -264,7 +282,7 @@ function blit(tex,alpha){ gl.useProgram(BP); gl.activeTexture(gl.TEXTURE0); gl.b
 function redraw(){
   // 1) 當前筆 → strokeBuf（MAX，避免重疊變黑）
   gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  if(cur && cur.length>=1){ gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(cur), sbo); }
+  if(cur && cur.length>=1){ gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(smoothPath(cur)), sbo); }
   // 2) 畫面：紙底 + committed + strokeBuf
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H);
   gl.clearColor(0.984,0.972,0.945,1); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -276,7 +294,7 @@ function strokeBlend(){ if(USE_MAX){ gl.blendEquation(gl.MAX); } else { gl.blend
 function commitStroke(){
   if(!cur||cur.length<1) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(cur), sbo);
+  gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(smoothPath(cur)), sbo);
   gl.bindFramebuffer(gl.FRAMEBUFFER,fbo); gl.viewport(0,0,W,H);
   gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); blit(sboTex,1.0);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
