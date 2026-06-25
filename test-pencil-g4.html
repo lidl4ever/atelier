@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v15 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v16 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -20,8 +20,11 @@
 </head>
 <body>
 <canvas id="c"></canvas>
+<canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v15 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v16 · debug</span>
+  <button id="mark">標記:開</button>
+  <button id="blend">疊加</button>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -32,6 +35,17 @@ const DPR=Math.min(devicePixelRatio||1,2.5);
 const gl=cv.getContext('webgl2',{alpha:false,antialias:true,preserveDrawingBuffer:true});
 let W=0,H=0;
 const INK=[0.17,0.16,0.14];
+/* ── debug 診斷層 ── */
+const ov=document.getElementById('ov'); const octx=ov.getContext('2d');
+let showMarks=true, USE_MAX=false, allPts=[];   // allPts: 已提交筆畫的取樣點 {x,y,pr}
+function drawOverlay(){
+  octx.clearRect(0,0,ov.width,ov.height);
+  if(!showMarks) return;
+  const dot=(p,col)=>{ octx.fillStyle=col; octx.beginPath();
+    octx.arc(p.x, p.y, 1.2*DPR+3*DPR*(p.pr||0), 0, 6.283); octx.fill(); };
+  for(const p of allPts) dot(p,'rgba(220,30,30,0.85)');     // 紅＝已提交取樣點，大小∝壓力
+  if(cur) for(const p of cur) dot(p,'rgba(20,90,230,0.9)');  // 藍＝當前筆
+}
 
 /* ───────────────────────────────────────────────────────────────────
    可調旋鈕（在裝置上對著 Paper 微調）—— 細紙 vs 粗紙就靠這幾個
@@ -193,7 +207,7 @@ function mkFBO(){ const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex
 function buildFBOs(){ if(fboTex)gl.deleteTexture(fboTex); if(fbo)gl.deleteFramebuffer(fbo);
   if(sboTex)gl.deleteTexture(sboTex); if(sbo)gl.deleteFramebuffer(sbo);
   let a=mkFBO(); fbo=a.f; fboTex=a.tex; let b=mkFBO(); sbo=b.f; sboTex=b.tex; }
-function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); cv.width=W; cv.height=H; buildFBOs(); redraw(); }
+function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); cv.width=W; cv.height=H; ov.width=W; ov.height=H; buildFBOs(); redraw(); }
 
 /* 由筆畫點重採樣成 dab 實例（中心、半徑、ink、tilt） */
 function buildDabs(pts){
@@ -250,20 +264,23 @@ function blit(tex,alpha){ gl.useProgram(BP); gl.activeTexture(gl.TEXTURE0); gl.b
 function redraw(){
   // 1) 當前筆 → strokeBuf（MAX，避免重疊變黑）
   gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  if(cur && cur.length>=1){ gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); drawDabs(buildDabs(cur), sbo); }
+  if(cur && cur.length>=1){ gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(cur), sbo); }
   // 2) 畫面：紙底 + committed + strokeBuf
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H);
   gl.clearColor(0.984,0.972,0.945,1); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
   blit(fboTex,1.0); blit(sboTex,1.0);
+  drawOverlay();
 }
+function strokeBlend(){ if(USE_MAX){ gl.blendEquation(gl.MAX); } else { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); } }
 function commitStroke(){
   if(!cur||cur.length<1) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); drawDabs(buildDabs(cur), sbo);
+  gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(cur), sbo);
   gl.bindFramebuffer(gl.FRAMEBUFFER,fbo); gl.viewport(0,0,W,H);
-  gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); blit(sboTex,1.0);
+  gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); blit(sboTex,1.0);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  for(const p of cur) allPts.push({x:p.x,y:p.y,pr:p.pr||0});  // 記錄取樣點供診斷
 }
 
 /* ── 互動 ── */
@@ -300,20 +317,22 @@ function dbgShow(e){
 }
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
   const q=pos(e); sx=q.x; sy=q.y; smP=pressure(e); smT=tilt(e); const wi=widthInk(smP,smT);
-  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(e)}]; dbgShow(e); redraw(); }
+  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(e),pr:pressure(e)}]; dbgShow(e); redraw(); }
 function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
   const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
   for(const ev of evs){ const q=pos(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
     smP+=(pressure(ev)-smP)*INPUT_SMOOTH; smT+=(tilt(ev)-smT)*INPUT_SMOOTH;  // 平滑壓力/傾斜，去尖刺
     const last=cur[cur.length-1], dx=sx-last.x, dy=sy-last.y;
-    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(smP,smT); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(ev)}); } }
+    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(smP,smT); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(ev),pr:pressure(ev)}); } }
   dbgShow(e); redraw(); }
 function up(e){ if(!cur)return; e.preventDefault(); commitStroke(); cur=null; redraw(); }
 cv.addEventListener('pointerdown',down,{passive:false});
 cv.addEventListener('pointermove',move,{passive:false});
 cv.addEventListener('pointerup',up,{passive:false});
 cv.addEventListener('pointercancel',up,{passive:false});
-document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); minAlt=90; redraw(); });
+document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); minAlt=90; allPts=[]; redraw(); });
+document.getElementById('mark').addEventListener('click',(e)=>{ showMarks=!showMarks; e.target.textContent='標記:'+(showMarks?'開':'關'); redraw(); });
+document.getElementById('blend').addEventListener('click',(e)=>{ USE_MAX=!USE_MAX; e.target.textContent=USE_MAX?'MAX':'疊加'; });
 addEventListener('resize',resize);
 resize();
 </script>
