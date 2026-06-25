@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v12 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v13 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v12 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v13 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -213,7 +213,7 @@ function buildDabs(pts){
       const r=a.hw+(b.hw-a.hw)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
       const azi=Math.atan2(say+(sby-say)*t, cax+(cbx-cax)*t);
       push(a.x+ux*d, a.y+uy*d, r, ink, tilt, azi);
-      const sp=Math.max(0.35, r*0.12);  // 間距＝半徑的 0.12（夠密，加成下不串珠）；下限小，細線也順
+      const sp=Math.max(0.2, r*0.12);   // 間距＝半徑的 0.12（夠密，加成下不串珠）；下限 0.2，最細尖也順
       d+=sp;
     }
     carry=d-seg;
