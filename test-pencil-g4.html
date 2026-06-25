@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v13 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v14 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -21,7 +21,7 @@
 <body>
 <canvas id="c"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v13 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v14 · debug</span>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -263,7 +263,8 @@ function commitStroke(){
 }
 
 /* ── 互動 ── */
-let cur=null, sx=0, sy=0;
+let cur=null, sx=0, sy=0, smP=0.5, smT=0;     // 平滑後的壓力/傾斜（壓掉 Pencil 抖動尖刺＝細線串珠主因）
+const INPUT_SMOOTH = 0.18;                     // 壓力/傾斜低通：小=更平滑（抗尖刺）、大=更靈敏
 function widthInk(p,tilt){
   const diaMM=NIB_MIN_MM+(NIB_MAX_MM-NIB_MIN_MM)*p;  // 壓力 → 尖端直徑(mm)
   const widthMM=diaMM + TILT_BROAD_MM*Math.pow(tilt,TILT_CURVE);  // 傾斜額外鋪寬（削尖鉛筆側鋒）
@@ -294,13 +295,14 @@ function dbgShow(e){
     +' · 寬 '+(wi.hw*2/PX_PER_MM).toFixed(1)+'mm · 壓 '+p.toFixed(2)+' · '+(hasAzi?'azi':'⚠無azi')+' '+aziDeg;
 }
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
-  const q=pos(e); sx=q.x; sy=q.y; const wi=widthInk(pressure(e),tilt(e));
+  const q=pos(e); sx=q.x; sy=q.y; smP=pressure(e); smT=tilt(e); const wi=widthInk(smP,smT);
   cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(e)}]; dbgShow(e); redraw(); }
 function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
   const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
   for(const ev of evs){ const q=pos(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
+    smP+=(pressure(ev)-smP)*INPUT_SMOOTH; smT+=(tilt(ev)-smT)*INPUT_SMOOTH;  // 平滑壓力/傾斜，去尖刺
     const last=cur[cur.length-1], dx=sx-last.x, dy=sy-last.y;
-    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(pressure(ev),tilt(ev)); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(ev)}); } }
+    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(smP,smT); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(ev)}); } }
   dbgShow(e); redraw(); }
 function up(e){ if(!cur)return; e.preventDefault(); commitStroke(); cur=null; redraw(); }
 cv.addEventListener('pointerdown',down,{passive:false});
