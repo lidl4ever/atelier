@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v17 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v18 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -22,7 +22,7 @@
 <canvas id="c"></canvas>
 <canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v17 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v18 · debug</span>
   <button id="mark">標記:關</button>
   <button id="blend">疊加</button>
   <button id="clear">清除</button>
@@ -209,20 +209,26 @@ function buildFBOs(){ if(fboTex)gl.deleteTexture(fboTex); if(fbo)gl.deleteFrameb
   let a=mkFBO(); fbo=a.f; fboTex=a.tex; let b=mkFBO(); sbo=b.f; sboTex=b.tex; }
 function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); cv.width=W; cv.height=H; ov.width=W; ov.height=H; buildFBOs(); redraw(); }
 
-/* Catmull-Rom 路徑平滑：稀疏折線 → 平順曲線，消除轉角加成堆積（串珠） */
-function cmr(p0,p1,p2,p3,t){const t2=t*t,t3=t2*t;
-  return 0.5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3);}
+/* Centripetal Catmull-Rom 路徑平滑：不過衝、不自交（uniform 版會在不等距取樣處甩出小迴圈→串珠） */
 function smoothPath(pts){
   if(pts.length<3) return pts;
   const out=[];
+  const knot=(a,b)=>Math.max(1e-3, Math.pow((b.x-a.x)**2+(b.y-a.y)**2, 0.25)); // dist^0.5（alpha=0.5）
   for(let i=0;i<pts.length-1;i++){
     const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||pts[i+1];
+    const t0=0, t1=t0+knot(p0,p1), t2=t1+knot(p1,p2), t3=t2+knot(p2,p3);
     const segLen=Math.hypot(p2.x-p1.x,p2.y-p1.y);
     const steps=Math.max(1,Math.ceil(segLen/3));   // 每 ~3px 一個平滑子點
-    for(let s=0;s<steps;s++){ const t=s/steps;
-      out.push({x:cmr(p0.x,p1.x,p2.x,p3.x,t), y:cmr(p0.y,p1.y,p2.y,p3.y,t),
-        hw:p1.hw+(p2.hw-p1.hw)*t, ink:p1.ink+(p2.ink-p1.ink)*t,
-        tilt:p1.tilt+(p2.tilt-p1.tilt)*t, azi:p1.azi, pr:p1.pr+(p2.pr-p1.pr)*t}); }
+    for(let s=0;s<steps;s++){ const u=s/steps, t=t1+(t2-t1)*u;
+      const lx=(ax,bx,ta,tb)=>((tb-t)*ax+(t-ta)*bx)/(tb-ta);
+      const A1x=lx(p0.x,p1.x,t0,t1),A1y=lx(p0.y,p1.y,t0,t1);
+      const A2x=lx(p1.x,p2.x,t1,t2),A2y=lx(p1.y,p2.y,t1,t2);
+      const A3x=lx(p2.x,p3.x,t2,t3),A3y=lx(p2.y,p3.y,t2,t3);
+      const B1x=((t2-t)*A1x+(t-t0)*A2x)/(t2-t0),B1y=((t2-t)*A1y+(t-t0)*A2y)/(t2-t0);
+      const B2x=((t3-t)*A2x+(t-t1)*A3x)/(t3-t1),B2y=((t3-t)*A2y+(t-t1)*A3y)/(t3-t1);
+      out.push({x:((t2-t)*B1x+(t-t1)*B2x)/(t2-t1), y:((t2-t)*B1y+(t-t1)*B2y)/(t2-t1),
+        hw:p1.hw+(p2.hw-p1.hw)*u, ink:p1.ink+(p2.ink-p1.ink)*u,
+        tilt:p1.tilt+(p2.tilt-p1.tilt)*u, azi:p1.azi, pr:p1.pr+(p2.pr-p1.pr)*u}); }
   }
   out.push(pts[pts.length-1]);
   return out;
