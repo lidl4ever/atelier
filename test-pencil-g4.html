@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v18 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v19 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -22,9 +22,9 @@
 <canvas id="c"></canvas>
 <canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v18 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v19 · debug</span>
   <button id="mark">標記:關</button>
-  <button id="blend">疊加</button>
+  <button id="blend">混合:疊加</button>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -356,7 +356,7 @@ cv.addEventListener('pointerup',up,{passive:false});
 cv.addEventListener('pointercancel',up,{passive:false});
 document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); minAlt=90; allPts=[]; redraw(); });
 document.getElementById('mark').addEventListener('click',(e)=>{ showMarks=!showMarks; e.target.textContent='標記:'+(showMarks?'開':'關'); redraw(); });
-document.getElementById('blend').addEventListener('click',(e)=>{ USE_MAX=!USE_MAX; e.target.textContent=USE_MAX?'MAX':'疊加'; });
+document.getElementById('blend').addEventListener('click',(e)=>{ USE_MAX=!USE_MAX; e.target.textContent='混合:'+(USE_MAX?'MAX':'疊加'); });
 addEventListener('resize',resize);
 resize();
 </script>
