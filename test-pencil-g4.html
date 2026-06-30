@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v19 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v20 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -22,9 +22,9 @@
 <canvas id="c"></canvas>
 <canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v19 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v20 · debug</span>
   <button id="mark">標記:關</button>
-  <button id="blend">混合:疊加</button>
+  <button id="blend">混合:MAX</button>
   <button id="clear">清除</button>
 </div>
 <div class="hint">用 Apple Pencil 直接畫 · 直立＝細線、放斜＝寬側鋒 · 壓力＝濃淡</div>
@@ -37,7 +37,7 @@ let W=0,H=0;
 const INK=[0.17,0.16,0.14];
 /* ── debug 診斷層 ── */
 const ov=document.getElementById('ov'); const octx=ov.getContext('2d');
-let showMarks=false, USE_MAX=false, allPts=[];  // allPts: 已提交筆畫的取樣點 {x,y,pr}
+let showMarks=false, USE_MAX=true, allPts=[];   // USE_MAX: 整筆 MAX 累積（平滑無串珠）→ 半透明合成。allPts: 取樣點 {x,y,pr}
 function drawOverlay(){
   octx.clearRect(0,0,ov.width,ov.height);
   if(!showMarks) return;
@@ -57,7 +57,7 @@ function drawOverlay(){
 const GRAIN_PX    = 200 * DPR / 2.5;  // 細紙：小貼圖、細顆粒
 const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
 const EDGE_BITE   = 0.60;
-const DAB_FLOW    = 0.045;            // 每 dab 沉積量（加成疊印）：小=單筆淡、重疊才變深（顯現層次）
+const DAB_FLOW    = 0.62;             // MAX 架構下＝單筆濃度（每 dab 值；MAX 取最大，不隨重疊數變→無串珠）
 const EDGE_GRAD   = 0.35;             // 側鋒斜向漸層：筆芯側=全濃 → 另一側=此比例（小=對比強）
 const SMOOTH_LEN_PX = 9;              // 寬度/濃度沿弧長平滑長度(device px)：壓掉壓力尖刺串珠；大=更平滑
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
@@ -296,7 +296,16 @@ function redraw(){
   blit(fboTex,1.0); blit(sboTex,1.0);
   drawOverlay();
 }
-function strokeBlend(){ if(USE_MAX){ gl.blendEquation(gl.MAX); } else { gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); } }
+function strokeBlend(){
+  if(USE_MAX){
+    // True per-stroke coverage buffer: keep the strongest dab value without alpha-weighting existing pixels.
+    gl.blendEquation(gl.MAX);
+    gl.blendFunc(gl.ONE,gl.ONE);
+  } else {
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+  }
+}
 function commitStroke(){
   if(!cur||cur.length<1) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
