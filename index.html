@@ -178,10 +178,10 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   #grades{bottom:calc(env(safe-area-inset-bottom) + 176px)}
   #colorPanel,#sizePanel{bottom:calc(env(safe-area-inset-bottom) + 192px)}
 }
-@media (orientation:landscape) and (max-height:780px){
+@media (orientation:landscape){
   #dock{left:calc(env(safe-area-inset-left) + 14px);top:50%;bottom:auto;transform:translateY(-50%)}
   #topL{left:calc(env(safe-area-inset-left) + 158px)}
-  .tool-dock{width:128px;height:min(88vh,680px);grid-template-rows:254px 1fr;border-radius:18px}
+  .tool-dock{width:128px;height:min(calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 28px),680px);grid-template-rows:254px 1fr;border-radius:18px}
   .dock-top{grid-template-columns:1fr;grid-template-rows:42px 1fr 42px;padding:12px 10px;justify-items:center}
   .quick-colors{display:grid;grid-template-columns:repeat(2,26px);gap:7px;padding:9px 8px}.quick-colors button{width:26px;height:26px}
   .dock-bottom{grid-template-columns:1fr;grid-template-rows:1fr auto;min-height:0}
@@ -310,7 +310,7 @@ const DB = {
 };
 
 /* ════════════════ 全域狀態 ════════════════ */
-const APP_VERSION = 'v2.2';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
+const APP_VERSION = 'v2.3';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
 const PAPER = '#FBF8F1';
 const S = {
   doc:null,            // {id,name,w,h,scale,layers:[{canvas,ctx,visible,opacity}],active}
