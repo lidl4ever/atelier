@@ -15,7 +15,7 @@
   --paper:#F6F1E8; --canvas-paper:#FBF8F1; --ink:#26241F; --ink-soft:#6E675C;
   --accent:#C25E40; --line:rgba(38,36,31,.12);
   --chrome:rgba(251,248,241,.82); --shadow:0 8px 30px rgba(38,36,31,.14), 0 1px 3px rgba(38,36,31,.08);
-  --dock-height:136px; --dock-top:46px; --dock-bottom:90px; --dock-peek:22px;
+  --dock-height:144px; --dock-top:46px; --dock-bottom:98px; --dock-peek:22px;
   --dock-panel-offset:calc(env(safe-area-inset-bottom) + var(--dock-height) + 18px);
   --serif:"Fraunces", Georgia, serif;
   --sans:ui-sans-serif, -apple-system, "PingFang TC", sans-serif;
@@ -92,8 +92,8 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   width:min(94vw,920px);height:var(--dock-height);overflow:hidden;border-radius:18px;
   position:absolute;isolation:isolate;
   background:
-    radial-gradient(120% 160% at 50% -40%,rgba(255,255,255,.12),rgba(255,255,255,0) 44%),
-    linear-gradient(180deg,rgba(39,40,38,.86),rgba(24,25,23,.88));
+    radial-gradient(130% 170% at 50% -42%,rgba(255,255,255,.14),rgba(255,255,255,0) 42%),
+    linear-gradient(180deg,rgba(35,36,34,.94),rgba(20,21,20,.96));
   box-shadow:0 22px 76px rgba(20,18,15,.28),0 2px 8px rgba(0,0,0,.20);
   border:1px solid rgba(255,255,255,.09);
   backdrop-filter:blur(26px) saturate(1.08);-webkit-backdrop-filter:blur(26px) saturate(1.08);
@@ -107,7 +107,7 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
     linear-gradient(90deg,rgba(255,255,255,.035),rgba(255,255,255,0) 18%,rgba(255,255,255,.025) 78%,rgba(255,255,255,0));
 }
 .tool-dock::after{
-  content:"";position:absolute;inset:-40px;z-index:-1;pointer-events:none;opacity:.13;
+  content:"";position:absolute;inset:-40px;z-index:-1;pointer-events:none;opacity:.09;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .95 0 0 0 0 .95 0 0 0 0 .92 0 0 0 .42 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23f)'/%3E%3C/svg%3E");
   mix-blend-mode:screen;
 }
@@ -127,15 +127,15 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   transition:transform .2s cubic-bezier(.2,.9,.3,1.5),box-shadow .2s,border-color .2s}
 .quick-colors button.on{transform:translateY(-1px) scale(1.12);border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.9),0 6px 14px rgba(0,0,0,.30),inset 0 1px 3px rgba(255,255,255,.2)}
 .dock-bottom{display:grid;grid-template-columns:1fr auto;min-width:0;background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.035)}
-.tool-rail{display:flex;align-items:end;gap:14px;overflow-x:auto;overflow-y:hidden;padding:6px 18px 0;scroll-snap-type:x proximity;touch-action:pan-x}
-.tool-btn{width:68px;height:86px;flex:0 0 68px;position:relative;display:flex;align-items:end;justify-content:center;scroll-snap-align:center;border-radius:16px;color:#fff;
+.tool-rail{display:flex;align-items:end;gap:16px;overflow-x:auto;overflow-y:hidden;padding:6px 20px 0;scroll-snap-type:x proximity;touch-action:pan-x}
+.tool-btn{width:74px;height:94px;flex:0 0 74px;position:relative;display:flex;align-items:end;justify-content:center;scroll-snap-align:center;border-radius:16px;color:#fff;
   transition:transform .26s cubic-bezier(.2,.9,.2,1.25),filter .22s,opacity .22s}
 .tool-btn::before{content:"";position:absolute;left:10px;right:10px;bottom:0;height:14px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(0,0,0,.36),transparent 72%);filter:blur(6px);transition:transform .26s,opacity .22s}
-.tool-btn .tool-art{position:relative;width:66px;height:86px;display:flex;align-items:end;justify-content:center;filter:drop-shadow(0 10px 12px rgba(0,0,0,.28));transform-origin:50% 88%;transition:transform .28s cubic-bezier(.2,.9,.2,1.25)}
-.tool-btn svg.tool-illus{width:66px;height:86px;overflow:visible}
-.tool-btn:not(.on){opacity:.68;filter:saturate(.8) brightness(.82)}
+.tool-btn .tool-art{position:relative;width:72px;height:96px;display:flex;align-items:end;justify-content:center;filter:drop-shadow(0 12px 13px rgba(0,0,0,.34));transform-origin:50% 90%;transition:transform .28s cubic-bezier(.2,.9,.2,1.25)}
+.tool-btn svg.tool-illus{width:72px;height:96px;overflow:visible;shape-rendering:geometricPrecision}
+.tool-btn:not(.on){opacity:.9;filter:saturate(.98) brightness(.95)}
 .tool-btn.on{transform:translateY(-8px)}
-.tool-btn.on .tool-art{transform:scale(1.04) rotate(-1deg)}
+.tool-btn.on .tool-art{transform:scale(1.035) rotate(-1deg)}
 .tool-btn.on::before{opacity:.72;transform:scale(1.08)}
 .tool-btn:active .tool-art{transform:translateY(4px) scale(.96) rotate(2deg)}
 .tool-btn.pop .tool-art{animation:toolPop .38s cubic-bezier(.2,.9,.2,1.35)}
@@ -203,15 +203,15 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   font-size:13px;opacity:0;pointer-events:none;transition:all .3s;white-space:nowrap}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media (max-width:720px){
-  :root{--dock-height:126px;--dock-top:42px;--dock-bottom:84px;--dock-panel-offset:calc(env(safe-area-inset-bottom) + var(--dock-height) + 16px)}
+  :root{--dock-height:132px;--dock-top:42px;--dock-bottom:90px;--dock-panel-offset:calc(env(safe-area-inset-bottom) + var(--dock-height) + 16px)}
   .tool-dock{width:calc(100vw - 18px);border-radius:16px}
   .dock-top{grid-template-columns:42px 1fr 42px;padding-inline:12px}
   .quick-colors{gap:7px;padding:5px 9px}.quick-colors button{width:22px;height:22px}
-  .tool-rail{gap:10px;padding-inline:12px}.tool-btn{width:58px;flex-basis:58px;height:80px}.tool-btn .tool-art,.tool-btn svg.tool-illus{width:58px;height:80px}
+  .tool-rail{gap:10px;padding-inline:12px}.tool-btn{width:62px;flex-basis:62px;height:84px}.tool-btn .tool-art,.tool-btn svg.tool-illus{width:62px;height:84px}
   .dock-controls{gap:8px;padding-right:12px}.color-orb,.size-orb{width:48px;height:48px}.color-orb span{width:28px;height:28px}
 }
 @media (orientation:landscape){
-  :root{--dock-side-width:126px;--dock-peek:20px}
+  :root{--dock-side-width:136px;--dock-peek:20px}
   #dock{
     left:calc(env(safe-area-inset-left) + 10px);top:50%;bottom:auto;
     transform:translateX(var(--dock-drag-x)) translateY(-50%);
@@ -224,7 +224,7 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   .quick-colors{display:grid;grid-template-columns:repeat(2,24px);gap:7px;padding:8px}.quick-colors button{width:24px;height:24px}
   .dock-bottom{grid-template-columns:1fr;grid-template-rows:1fr auto;min-height:0}
   .tool-rail{flex-direction:column;align-items:center;gap:10px;overflow-x:hidden;overflow-y:auto;padding:10px 8px 0;touch-action:pan-y;scroll-snap-type:y proximity}
-  .tool-btn{width:72px;height:78px;flex:0 0 78px}.tool-btn .tool-art,.tool-btn svg.tool-illus{width:64px;height:78px}.tool-btn.on{transform:translateX(8px)}
+  .tool-btn{width:78px;height:84px;flex:0 0 84px}.tool-btn .tool-art,.tool-btn svg.tool-illus{width:70px;height:84px}.tool-btn.on{transform:translateX(8px)}
   .dock-controls{padding:8px 0 12px;justify-content:center}.color-orb,.size-orb{width:50px;height:50px}.color-orb span{width:28px;height:28px}
   #grades{left:calc(env(safe-area-inset-left) + 158px);top:50%;bottom:auto;transform:translateY(-50%);flex-direction:column}
   #colorPanel,#sizePanel{left:calc(env(safe-area-inset-left) + 158px);bottom:24px;transform:none}
@@ -1430,13 +1430,13 @@ function setupDockDrag(){
   });
 }
 const TOOL_META=[
-  {id:'pencil',name:'鉛筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M37 9c5-5 11-5 16 0l-3 13H40z" fill="#f7ead9"/><path d="M40 22h10l12 48-17 23-17-23z" fill="#ff6c55"/><path d="M32 32l8-10v63l-12-15z" fill="#ff886e"/><path d="M50 22l12 48-10 13-7-61z" fill="#e94c3f"/><path d="M37 9c5-5 11-5 16 0l-3 13H40z" fill="#fff"/><path d="M45 93l17-23H28z" fill="#2b2520"/></svg>`},
-  {id:'pen',name:'墨水筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M40 8l16 48-9 29H33l-9-29z" fill="#8d8d87"/><path d="M40 8l7 48-7 12-7-12z" fill="#b9bbb4"/><path d="M24 56h32l-4 13H28z" fill="#302f2b"/><circle cx="40" cy="53" r="5" fill="#33322f"/><path d="M28 69h24v25H28z" fill="#9d7a22"/><path d="M30 94h20" stroke="#44361b" stroke-width="4" stroke-linecap="round"/></svg>`},
-  {id:'brush',name:'毛筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M39 7c7 22 14 37 14 52 0 14-8 24-13 31-5-7-13-17-13-31C27 44 34 29 39 7z" fill="#a3a39d"/><path d="M40 8c-1 27-3 43-2 71" stroke="#75756f" stroke-width="1.2" opacity=".55"/><path d="M27 63h26l-2 14H29z" fill="#252421"/><path d="M31 77h18v17H31z" fill="#72579a"/></svg>`},
-  {id:'marker',name:'麥克筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M28 19h24l5 19-6 44H29l-6-44z" fill="#262724"/><path d="M30 60h20v30H30z" fill="#5d9aa1"/><path d="M31 19h18l4 18H27z" fill="#8b8d88"/><path d="M33 12c4-6 10-6 14 0v7H33z" fill="#9a9a95"/><path d="M24 38h32l-4 22H28z" fill="#1b1c1a"/></svg>`},
-  {id:'water',name:'水彩',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M40 12s19 25 19 44a19 19 0 0 1-38 0c0-19 19-44 19-44z" fill="#5cc1d5"/><path d="M31 47c2-12 9-23 9-23s11 18 11 32c0 8-5 13-12 13-8 0-12-5-12-12 0-3 2-7 4-10z" fill="#8bd5c2" opacity=".72"/><path d="M49 34c7 8 10 16 10 24 0 10-7 18-18 18" fill="none" stroke="#f0cd5a" stroke-width="12" stroke-linecap="round" opacity=".68"/></svg>`},
-  {id:'eraser',name:'橡皮擦',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M22 55l24-34c3-4 8-4 11 0l7 9c3 4 3 8 0 12L42 75z" fill="#f0a6ad"/><path d="M22 55l20 20-10 12H15c-5 0-8-5-5-9z" fill="#f6d9cd"/><path d="M41 75l23-33" stroke="#cf7f86" stroke-width="3" opacity=".5"/></svg>`},
-  {id:'smudge',name:'塗抹',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M45 9c7 0 11 5 10 13L49 67c-1 8-8 15-16 15-9 0-15-7-13-16l8-42c2-10 8-15 17-15z" fill="#d8c5aa"/><path d="M30 74c10-2 21-2 31 4 5 3 5 10-1 12-14 5-33 2-43-6-4-3-3-8 2-9 3-.5 7-.3 11-1z" fill="#8b7b67" opacity=".82"/><path d="M35 20l-7 39" stroke="#ad967b" stroke-width="3" stroke-linecap="round" opacity=".5"/></svg>`}
+  {id:'eraser',name:'橡皮擦',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="erBody" x1="20" y1="94" x2="60" y2="32" gradientUnits="userSpaceOnUse"><stop stop-color="#191b1b"/><stop offset=".55" stop-color="#303332"/><stop offset="1" stop-color="#1c1e1e"/></linearGradient><linearGradient id="erCap" x1="18" y1="24" x2="62" y2="50" gradientUnits="userSpaceOnUse"><stop stop-color="#f4f0e8"/><stop offset=".45" stop-color="#d8d5cd"/><stop offset="1" stop-color="#bcb9b2"/></linearGradient><linearGradient id="erBand" x1="17" y1="65" x2="63" y2="65" gradientUnits="userSpaceOnUse"><stop stop-color="#27518e"/><stop offset=".5" stop-color="#4f91e8"/><stop offset="1" stop-color="#193b70"/></linearGradient></defs><ellipse cx="40" cy="102" rx="26" ry="5" fill="#050606" opacity=".35"/><rect x="19" y="38" width="42" height="62" rx="5" fill="url(#erBody)"/><path d="M23 40h10v58H23z" fill="#4c5153" opacity=".55"/><path d="M52 40h6v58h-6z" fill="#111313" opacity=".55"/><rect x="18" y="22" width="44" height="29" rx="8" fill="url(#erCap)"/><path d="M23 24h32c5 0 8 4 8 8v3c-3-5-6-7-11-7H23z" fill="#fff" opacity=".32"/><path d="M18 57h44v7H18z" fill="url(#erBand)"/><path d="M22 57h8v42h-8z" fill="#fff" opacity=".08"/></svg>`},
+  {id:'pencil',name:'鉛筆',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="gpWood" x1="26" y1="12" x2="54" y2="47" gradientUnits="userSpaceOnUse"><stop stop-color="#f8d293"/><stop offset=".58" stop-color="#e8ad62"/><stop offset="1" stop-color="#b97438"/></linearGradient><linearGradient id="gpDark" x1="19" y1="55" x2="61" y2="55" gradientUnits="userSpaceOnUse"><stop stop-color="#515861"/><stop offset=".27" stop-color="#222832"/><stop offset=".63" stop-color="#151b24"/><stop offset="1" stop-color="#333a45"/></linearGradient><linearGradient id="gpTip" x1="35" y1="2" x2="45" y2="26" gradientUnits="userSpaceOnUse"><stop stop-color="#1b2027"/><stop offset="1" stop-color="#3d4247"/></linearGradient></defs><ellipse cx="40" cy="103" rx="24" ry="4.5" fill="#050606" opacity=".38"/><path d="M23 48l17-35 17 35v51H23z" fill="url(#gpDark)"/><path d="M24 48l8-15 8 15v51H24z" fill="#434a55"/><path d="M40 48l8-16 8 16v51H40z" fill="#111721" opacity=".65"/><path d="M23 48l6-13 7 13 4-13 5 13 7-13 5 13H23z" fill="url(#gpWood)"/><path d="M32 31l8-18 8 18-8 14z" fill="url(#gpWood)"/><path d="M40 13l7 18-7 7-7-7z" fill="url(#gpTip)"/><path d="M31 91h18" stroke="#5e6670" stroke-width="2" opacity=".48"/><path d="M30 52v45" stroke="#6e7480" stroke-width="2" opacity=".35"/><path d="M52 52v45" stroke="#07090d" stroke-width="2" opacity=".28"/></svg>`},
+  {id:'pen',name:'細筆',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="cpWood" x1="26" y1="16" x2="54" y2="50" gradientUnits="userSpaceOnUse"><stop stop-color="#f9d18d"/><stop offset=".55" stop-color="#efb568"/><stop offset="1" stop-color="#c88442"/></linearGradient><linearGradient id="cpBody" x1="20" y1="62" x2="60" y2="62" gradientUnits="userSpaceOnUse"><stop stop-color="#5c646f"/><stop offset=".28" stop-color="#2a303b"/><stop offset=".66" stop-color="#161b24"/><stop offset="1" stop-color="#36404b"/></linearGradient><linearGradient id="cpRed" x1="32" y1="8" x2="52" y2="40" gradientUnits="userSpaceOnUse"><stop stop-color="#ff9c84"/><stop offset=".55" stop-color="#ff6256"/><stop offset="1" stop-color="#b93d39"/></linearGradient></defs><ellipse cx="40" cy="103" rx="24" ry="4.5" fill="#050606" opacity=".38"/><path d="M22 49l18-33 18 33v50H22z" fill="url(#cpBody)"/><path d="M23 49l8-13 9 13v50H23z" fill="#59616d"/><path d="M40 49l8-13 9 13v50H40z" fill="#10161e" opacity=".6"/><path d="M22 49l7-13 7 13 4-13 5 13 7-13 6 13H22z" fill="url(#cpWood)"/><path d="M32 34l8-18 8 18-8 11z" fill="url(#cpRed)"/><path d="M29 92h22v7H29z" fill="#ff6a66"/><path d="M36 93h7v6h-7z" fill="#ffb0a7" opacity=".35"/><path d="M31 54v40" stroke="#7b8490" stroke-width="2" opacity=".28"/><path d="M51 54v40" stroke="#07090d" stroke-width="2" opacity=".24"/></svg>`},
+  {id:'brush',name:'圓頭筆刷',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="rbHair" x1="30" y1="6" x2="52" y2="52" gradientUnits="userSpaceOnUse"><stop stop-color="#6f4321"/><stop offset=".4" stop-color="#b1793c"/><stop offset=".75" stop-color="#8e5a2d"/><stop offset="1" stop-color="#4a2b17"/></linearGradient><linearGradient id="rbFerrule" x1="26" y1="50" x2="56" y2="76" gradientUnits="userSpaceOnUse"><stop stop-color="#e7e7e2"/><stop offset=".33" stop-color="#bfc0bd"/><stop offset=".65" stop-color="#f4f3ec"/><stop offset="1" stop-color="#8e918d"/></linearGradient><linearGradient id="rbHandle" x1="27" y1="78" x2="55" y2="78" gradientUnits="userSpaceOnUse"><stop stop-color="#4b5159"/><stop offset=".35" stop-color="#222730"/><stop offset=".7" stop-color="#151920"/><stop offset="1" stop-color="#303742"/></linearGradient></defs><ellipse cx="41" cy="103" rx="21" ry="4.5" fill="#050606" opacity=".36"/><path d="M42 7c11 16 17 27 15 39-1 9-7 14-15 16-9-2-15-8-16-16-2-12 5-25 16-39z" fill="url(#rbHair)"/><path d="M42 9c-2 18-2 33-1 51" stroke="#d4a46f" stroke-width="1.4" opacity=".35"/><path d="M34 21c-5 11-8 20-7 27" stroke="#4b2c16" stroke-width="2" opacity=".25"/><path d="M27 52h29c3 0 5 3 5 6v16H23V58c0-3 2-6 4-6z" fill="url(#rbFerrule)"/><path d="M31 53h7v20h-7z" fill="#fff" opacity=".32"/><path d="M51 53h5v20h-5z" fill="#777a77" opacity=".28"/><path d="M25 70h34v7H25z" fill="#448be8"/><path d="M29 77h25v23H29z" fill="url(#rbHandle)"/><path d="M36 78v21" stroke="#68717c" stroke-width="2" opacity=".25"/></svg>`},
+  {id:'water',name:'平刷',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="fbHair" x1="20" y1="11" x2="60" y2="53" gradientUnits="userSpaceOnUse"><stop stop-color="#cc8f4c"/><stop offset=".55" stop-color="#a26831"/><stop offset="1" stop-color="#704117"/></linearGradient><linearGradient id="fbFerrule" x1="20" y1="51" x2="60" y2="78" gradientUnits="userSpaceOnUse"><stop stop-color="#eeeae2"/><stop offset=".36" stop-color="#c9c6be"/><stop offset=".68" stop-color="#f7f5ef"/><stop offset="1" stop-color="#9c9b96"/></linearGradient><linearGradient id="fbHandle" x1="24" y1="80" x2="56" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#4c535c"/><stop offset=".35" stop-color="#252a33"/><stop offset=".7" stop-color="#171b22"/><stop offset="1" stop-color="#303843"/></linearGradient></defs><ellipse cx="40" cy="103" rx="25" ry="4.5" fill="#050606" opacity=".36"/><path d="M20 14h40l3 48H17z" fill="url(#fbHair)"/><path d="M23 16h9v43h-9z" fill="#d69b58" opacity=".42"/><path d="M39 16h2v43h-2z" fill="#70431f" opacity=".35"/><path d="M53 16h4v43h-4z" fill="#5d361b" opacity=".28"/><path d="M18 52h44l-4 28H22z" fill="url(#fbFerrule)"/><path d="M28 54h12v24H28z" fill="#fff" opacity=".28"/><path d="M51 54h5v24h-5z" fill="#7f827f" opacity=".24"/><path d="M22 76h36v7H22z" fill="#448be8"/><path d="M27 83h26v17H27z" fill="url(#fbHandle)"/><path d="M35 84v16" stroke="#69727c" stroke-width="2" opacity=".24"/></svg>`},
+  {id:'marker',name:'針筆',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="lnMetal" x1="29" y1="20" x2="51" y2="72" gradientUnits="userSpaceOnUse"><stop stop-color="#f0eee9"/><stop offset=".5" stop-color="#b9bab8"/><stop offset="1" stop-color="#777b7c"/></linearGradient><linearGradient id="lnBody" x1="28" y1="78" x2="53" y2="78" gradientUnits="userSpaceOnUse"><stop stop-color="#4c535c"/><stop offset=".38" stop-color="#222730"/><stop offset=".72" stop-color="#141820"/><stop offset="1" stop-color="#303843"/></linearGradient></defs><ellipse cx="41" cy="103" rx="18" ry="4.2" fill="#050606" opacity=".34"/><path d="M40 8l5 27h-10z" fill="#11151b"/><path d="M33 35h15l6 37H27z" fill="url(#lnMetal)"/><path d="M36 36h4v35h-4z" fill="#fff" opacity=".35"/><path d="M48 37l4 34h-5z" fill="#787b7b" opacity=".45"/><path d="M27 70h27v7H27z" fill="#448be8"/><path d="M30 77h22v23H30z" fill="url(#lnBody)"/><path d="M37 78v22" stroke="#66707b" stroke-width="2" opacity=".25"/><path d="M51 78v22" stroke="#07090d" stroke-width="2" opacity=".22"/></svg>`},
+  {id:'smudge',name:'麥克筆',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="mkTip" x1="33" y1="7" x2="48" y2="38" gradientUnits="userSpaceOnUse"><stop stop-color="#0d1016"/><stop offset=".5" stop-color="#262a31"/><stop offset="1" stop-color="#080a0d"/></linearGradient><linearGradient id="mkBody" x1="23" y1="61" x2="58" y2="61" gradientUnits="userSpaceOnUse"><stop stop-color="#4d535d"/><stop offset=".3" stop-color="#222731"/><stop offset=".68" stop-color="#151922"/><stop offset="1" stop-color="#333b46"/></linearGradient></defs><ellipse cx="41" cy="103" rx="24" ry="4.6" fill="#050606" opacity=".38"/><path d="M40 7c5 0 8 4 8 10v15H31V17c0-6 4-10 9-10z" fill="url(#mkTip)"/><path d="M25 33h31l5 20v47H20V53z" fill="url(#mkBody)"/><path d="M28 36h10v63H28z" fill="#555c66" opacity=".42"/><path d="M49 35h6l3 18v46h-9z" fill="#0b0e13" opacity=".45"/><path d="M21 63h39v7H21z" fill="#2d77e8"/><path d="M27 34h28l-5 10H32z" fill="#3d444d" opacity=".75"/><path d="M36 64h9v6h-9z" fill="#79b3ff" opacity=".38"/></svg>`}
 ];
 const QUICK_SWATCH=['#061a3a','#124AF2','#3222F4','#3F7BD4','#7898D6','#B8C4DA','#B7AEB7'];
 function buildToolDock(){
@@ -1547,6 +1547,7 @@ async function showGallery(){
   if(S.doc){ clearTimeout(S.saveT); await saveDoc(); }
   S.doc=null;
   $('#studio').classList.remove('show'); $('#gallery').classList.add('show');
+  $('#verBadge').style.display='block';
   const grid=$('#grid'); grid.innerHTML='';
   const newCard=document.createElement('div');
   newCard.className='card new'; newCard.innerHTML='<div class="plus">＋</div><div>新作品</div>';
@@ -1575,6 +1576,7 @@ async function showGallery(){
 }
 function openStudio(){
   $('#gallery').classList.remove('show'); $('#studio').classList.add('show');
+  $('#verBadge').style.display='none';
   resizeView(); fitDoc();
 }
 $('#backBtn').addEventListener('click',showGallery);
