@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v21 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v22 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -22,7 +22,7 @@
 <canvas id="c"></canvas>
 <canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v21 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v22 · debug</span>
   <button id="mark">標記:關</button>
   <button id="blend">混合:MAX</button>
   <button id="clear">清除</button>
@@ -58,10 +58,14 @@ const GRAIN_PX    = 200 * DPR / 2.5;  // 細紙：小貼圖、細顆粒
 const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
 const EDGE_BITE   = 0.60;
 const DAB_FLOW    = 0.62;             // MAX 架構下＝單筆濃度（每 dab 值；MAX 取最大，不隨重疊數變→無串珠）
-const TAIL_SIGN   = -1.0;             // azimuth 指向筆桿時用 -1：筆尖細，反方向展開成寬側鋒；若實機方向反了改 1
+const TAIL_SIGN   = 1.0;              // v22 實機截圖顯示 v21 方向反了：改成 +1，側鋒往筆尖內側展開
 const TAIL_WIDTH  = 0.38;             // 側鋒尾端半寬 / 接觸半長：小=削尖楔形，大=寬扁側鋒
+const NOSE_WIDTH  = 0.18;             // 側鋒鼻端半寬 / 接觸半長：避免 0.3mm 尖端逐 dab 形成三角斷裂
 const TAIL_TONE   = 0.62;             // 側鋒尾端相對濃度：尾端較淡，細尖端較深
 const SMOOTH_LEN_PX = 9;              // 寬度/濃度沿弧長平滑長度(device px)：壓掉壓力尖刺串珠；大=更平滑
+const DAB_STEP_RAD = 0.12;            // 一般 dab 間距比例
+const DAB_STEP_TIP = 1.35;            // 放斜時改按尖端尺寸加密，避免側鋒邊緣梳齒
+const DAB_STEP_MIN = 0.55 * DPR;      // 放斜最小間距(device px)
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
 // 邊緣柔度（dab 剖面）：小＝平頂、邊界乾淨利落（Paper 風）；大＝高斯柔焦、發散（airbrush）
 const EDGE_SOFT_TIP  = 0.22;          // 直立筆尖的邊緣柔度
@@ -94,37 +98,38 @@ in vec2 aCenter;        // dab 中心（doc px，每實例）
 in float aRad, aTip, aInk, aTilt, aAzi;
 uniform vec2 uRes;
 out vec2 vBrush; out vec2 vWorld;
-out float vRad; out float vTip; out float vTail; out float vBack; out float vInk; out float vTilt;
+out float vRad; out float vTip; out float vNose; out float vTail; out float vBack; out float vInk; out float vTilt;
 void main(){
   float tilt=clamp(aTilt,0.,1.);
   vec2 tailDir=${TAIL_SIGN.toFixed(1)}*vec2(cos(aAzi),sin(aAzi));
   vec2 side=vec2(-tailDir.y,tailDir.x);
   float tip=max(aTip,0.5);
   float tail=max(tip, mix(aRad, aRad*${TAIL_WIDTH}, tilt));
+  float nose=max(tip, mix(aRad, aRad*${NOSE_WIDTH}, tilt));
   float front=mix(aRad, tip, tilt);
   float rear=max(front, aRad*2.0-front);
   float back=max(0.0, rear-tail);
   float along=mix(-front, rear, aCorner.x*0.5+0.5);
-  float across=aCorner.y*max(tail,tip);
+  float across=aCorner.y*max(tail,nose);
   vec2 pos=aCenter+tailDir*along+side*across;
   vBrush=vec2(along,across); vWorld=pos;
-  vRad=aRad; vTip=tip; vTail=tail; vBack=back; vInk=aInk; vTilt=tilt;
+  vRad=aRad; vTip=tip; vNose=nose; vTail=tail; vBack=back; vInk=aInk; vTilt=tilt;
   vec2 c=(pos/uRes)*2.0-1.0; c.y=-c.y; gl_Position=vec4(c,0.,1.);
 }`;
 const FS=`#version 300 es
 precision highp float;
 in vec2 vBrush; in vec2 vWorld;
-in float vRad; in float vTip; in float vTail; in float vBack; in float vInk; in float vTilt;
+in float vRad; in float vTip; in float vNose; in float vTail; in float vBack; in float vInk; in float vTilt;
 uniform vec3 uColor; uniform sampler2D uGrain; uniform float uGrainPx;
 out vec4 frag;
 void main(){
   float tilted=smoothstep(0.04,0.22,clamp(vTilt,0.,1.));
   float circleEdge=length(vBrush)/max(vRad,1.);
   float s=clamp(vBrush.x/max(vBack,1.),0.,1.);
-  float halfW=mix(vTip,vTail,smoothstep(0.,1.,s));
+  float halfW=mix(vNose,vTail,smoothstep(0.,1.,s));
   float wedgeEdge;
   if(vBrush.x<0.){
-    wedgeEdge=length(vec2(vBrush.x/max(vTip,1.), vBrush.y/max(vTip,1.)));
+    wedgeEdge=length(vec2(vBrush.x/max(vTip,1.), vBrush.y/max(vNose,1.)));
   }else if(vBrush.x>vBack){
     wedgeEdge=length(vec2((vBrush.x-vBack)/max(vTail,1.), vBrush.y/max(vTail,1.)));
   }else{
@@ -278,7 +283,10 @@ function buildDabs(pts){
       const r=a.hw+(b.hw-a.hw)*t, tip=a.tip+(b.tip-a.tip)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
       const azi=Math.atan2(say+(sby-say)*t, cax+(cbx-cax)*t);
       if(smR===null){ smR=r; smTip=tip; smInk=ink; }
-      const sp=Math.max(0.2, smR*0.12);   // 間距＝半徑的 0.12（夠密，加成下不串珠）；下限 0.2
+      const wideSp=Math.max(0.2, smR*DAB_STEP_RAD);
+      const tipSp=Math.max(DAB_STEP_MIN, smTip*DAB_STEP_TIP);
+      const tiltDense=Math.max(0,Math.min(1,(tilt-0.12)/0.38));
+      const sp=wideSp+(Math.min(wideSp,tipSp)-wideSp)*tiltDense;   // 放斜時加密，避免尖端逐 dab 形成梳齒
       const k=Math.min(1, sp/SMOOTH_LEN_PX);  // 距離域平滑：沿弧長壓掉壓力尖刺，與速度/密度無關
       smR+=(r-smR)*k; smTip+=(tip-smTip)*k; smInk+=(ink-smInk)*k;
       push(a.x+ux*d, a.y+uy*d, smR, smTip, smInk, tilt, azi);
