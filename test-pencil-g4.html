@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v20 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v21 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -22,7 +22,7 @@
 <canvas id="c"></canvas>
 <canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v20 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v21 · debug</span>
   <button id="mark">標記:關</button>
   <button id="blend">混合:MAX</button>
   <button id="clear">清除</button>
@@ -58,7 +58,9 @@ const GRAIN_PX    = 200 * DPR / 2.5;  // 細紙：小貼圖、細顆粒
 const GRAIN_DEPTH = 0.42;             // 細紙：淺紙齒
 const EDGE_BITE   = 0.60;
 const DAB_FLOW    = 0.62;             // MAX 架構下＝單筆濃度（每 dab 值；MAX 取最大，不隨重疊數變→無串珠）
-const EDGE_GRAD   = 0.35;             // 側鋒斜向漸層：筆芯側=全濃 → 另一側=此比例（小=對比強）
+const TAIL_SIGN   = -1.0;             // azimuth 指向筆桿時用 -1：筆尖細，反方向展開成寬側鋒；若實機方向反了改 1
+const TAIL_WIDTH  = 0.38;             // 側鋒尾端半寬 / 接觸半長：小=削尖楔形，大=寬扁側鋒
+const TAIL_TONE   = 0.62;             // 側鋒尾端相對濃度：尾端較淡，細尖端較深
 const SMOOTH_LEN_PX = 9;              // 寬度/濃度沿弧長平滑長度(device px)：壓掉壓力尖刺串珠；大=更平滑
 const CONTRAST    = 1.30;             // 細紙：低對比、勻
 // 邊緣柔度（dab 剖面）：小＝平頂、邊界乾淨利落（Paper 風）；大＝高斯柔焦、發散（airbrush）
@@ -76,9 +78,9 @@ const TILT_CURVE    = 2.0;            // 鋪寬曲線：越大＝近直立更細
    直立尖端 0.33–0.77mm（壓力）｜中等傾斜 ~8mm｜放斜 ~14mm｜躺平 ~24mm
    傾斜訊號用 altitudeAngle（真實高度角），非 tiltX/Y。tilt = (ALT_TIP_DEG-高度角)/(ALT_TIP_DEG-ALT_FLAT_DEG)
    高度角 ≥ ALT_TIP_DEG 維持最細筆尖（細線平台）；≤ ALT_FLAT_DEG 吃滿鋪寬
-   widthMM = 尖端 + TILT_BROAD_MM × tilt^TILT_CURVE，clamp 0..1 */
+   側鋒接觸長度 = 尖端 + TILT_BROAD_MM × tilt^TILT_CURVE，clamp 0..1 */
 
-/* ── dab shader：圓點蓋章；紙紋來自烘焙好的「可被 mip 過濾」貼圖 ──
+/* ── dab shader：直立圓點、傾斜錐形側鋒；紙紋來自烘焙好的「可被 mip 過濾」貼圖 ──
    核心修正 vs g2/g3：
    1) 紙紋不再用逐 fragment 的 fbm（在 1.35 scale 下整段都落在次像素 → 嚴重 aliasing＝
       你看到的「粗粒電視雜訊」）。改成預烘焙的細顆粒貼圖 + mipmap LINEAR，
@@ -89,25 +91,50 @@ const TILT_CURVE    = 2.0;            // 鋪寬曲線：越大＝近直立更細
 const VS=`#version 300 es
 in vec2 aCorner;        // 單位四邊形 -1..1（每頂點）
 in vec2 aCenter;        // dab 中心（doc px，每實例）
-in float aRad, aInk, aTilt, aAzi;
+in float aRad, aTip, aInk, aTilt, aAzi;
 uniform vec2 uRes;
-out vec2 vLocal; out vec2 vWorld; out float vInk; out float vTilt; out float vAzi;
+out vec2 vBrush; out vec2 vWorld;
+out float vRad; out float vTip; out float vTail; out float vBack; out float vInk; out float vTilt;
 void main(){
-  vLocal=aCorner; vInk=aInk; vTilt=aTilt; vAzi=aAzi;
-  vec2 pos=aCenter+aCorner*aRad; vWorld=pos;
+  float tilt=clamp(aTilt,0.,1.);
+  vec2 tailDir=${TAIL_SIGN.toFixed(1)}*vec2(cos(aAzi),sin(aAzi));
+  vec2 side=vec2(-tailDir.y,tailDir.x);
+  float tip=max(aTip,0.5);
+  float tail=max(tip, mix(aRad, aRad*${TAIL_WIDTH}, tilt));
+  float front=mix(aRad, tip, tilt);
+  float rear=max(front, aRad*2.0-front);
+  float back=max(0.0, rear-tail);
+  float along=mix(-front, rear, aCorner.x*0.5+0.5);
+  float across=aCorner.y*max(tail,tip);
+  vec2 pos=aCenter+tailDir*along+side*across;
+  vBrush=vec2(along,across); vWorld=pos;
+  vRad=aRad; vTip=tip; vTail=tail; vBack=back; vInk=aInk; vTilt=tilt;
   vec2 c=(pos/uRes)*2.0-1.0; c.y=-c.y; gl_Position=vec4(c,0.,1.);
 }`;
 const FS=`#version 300 es
 precision highp float;
-in vec2 vLocal; in vec2 vWorld; in float vInk; in float vTilt; in float vAzi;
+in vec2 vBrush; in vec2 vWorld;
+in float vRad; in float vTip; in float vTail; in float vBack; in float vInk; in float vTilt;
 uniform vec3 uColor; uniform sampler2D uGrain; uniform float uGrainPx;
 out vec4 frag;
 void main(){
-  float r=length(vLocal);
-  if(r>1.0) discard;
-  // 筆刷包絡：平頂＋窄邊（邊界乾淨，邊緣顆粒由 EDGE_BITE 咬碎）
+  float tilted=smoothstep(0.04,0.22,clamp(vTilt,0.,1.));
+  float circleEdge=length(vBrush)/max(vRad,1.);
+  float s=clamp(vBrush.x/max(vBack,1.),0.,1.);
+  float halfW=mix(vTip,vTail,smoothstep(0.,1.,s));
+  float wedgeEdge;
+  if(vBrush.x<0.){
+    wedgeEdge=length(vec2(vBrush.x/max(vTip,1.), vBrush.y/max(vTip,1.)));
+  }else if(vBrush.x>vBack){
+    wedgeEdge=length(vec2((vBrush.x-vBack)/max(vTail,1.), vBrush.y/max(vTail,1.)));
+  }else{
+    wedgeEdge=abs(vBrush.y)/max(halfW,1.);
+  }
+  float edge=mix(circleEdge,wedgeEdge,tilted);
+  if(edge>1.0) discard;
+  // 筆刷包絡：直立為圓形；傾斜時變成「細尖端 → 反方向寬尾端」的錐形側鋒
   float soft=mix(${EDGE_SOFT_TIP},${EDGE_SOFT_FLAT},clamp(vTilt,0.,1.));
-  float env=1.0-smoothstep(1.0-soft,1.0,r);          // 1 中心(平頂) → 0 邊緣
+  float env=1.0-smoothstep(1.0-soft,1.0,edge);        // 1 中心(平頂) → 0 邊緣
 
   // 紙紋取樣（紙錨定）：旋轉 30°＋輕微拉長＝纖維方向；REPEAT+mipmap 自動抗鋸齒
   vec2 gw=mat2(0.866,-0.5,0.5,0.866)*vWorld; gw.y*=0.85;
@@ -117,13 +144,12 @@ void main(){
   // 目標濃度＝壓力；紙齒從濃度「咬掉」一塊：紙谷(t小)咬得多、紙峰(t大)咬得少。
   // GRAIN_DEPTH 小 → 咬得淺 → 中間調平滑連續（細紙）；大 → 顆粒分明（粗紙）。
   // 因為 t 是 mip 過濾後的平滑場，cov 沿著等高線平滑過渡 → 顆粒邊自帶抗鋸齒、不再是離散硬點。
-  // 斜向漸層（筆芯側深→另一側淡），僅傾斜側鋒時生效；along 沿筆方位 azimuth
-  vec2 adir=vec2(cos(vAzi),sin(vAzi));
-  float along=clamp(dot(vLocal,adir)*0.5+0.5, 0.0, 1.0);
-  float lateral=mix(1.0, mix(1.0,${EDGE_GRAD},along), clamp(vTilt,0.,1.));
-  float local=clamp(vInk,0.,1.)*lateral;
+  // 錐形石墨沉積：細尖端較深，往反方向寬尾端漸淡；保留紙齒吃墨。
+  float tail01=mix(0.0,s,tilted);
+  float axial=mix(1.0, mix(1.0,${TAIL_TONE},tail01), tilted);
+  float local=clamp(vInk,0.,1.)*axial;
   float bite=(1.0-t)*${GRAIN_DEPTH} + (1.0-env)*${EDGE_BITE};  // 邊緣多咬 → 羽化成顆粒
-  float cov=clamp(local-bite, 0.0, 1.0) * ${DAB_FLOW};  // 加成疊印：單 dab 沉積少、重疊才深
+  float cov=clamp(local-bite, 0.0, 1.0) * ${DAB_FLOW};  // MAX stroke buffer 下的單 dab 覆蓋量
 
   if(cov<=0.003) discard;
   frag=vec4(uColor*cov,cov);   // 預乘 alpha（premultiplied）——整條 FBO 管線一致，避免提筆後變淡
@@ -140,7 +166,7 @@ function prog(vs,fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_S
   if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.warn(gl.getProgramInfoLog(p));return p;}
 const P=prog(VS,FS), BP=prog(BVS,BFS);
 const aCorner=gl.getAttribLocation(P,'aCorner'),aCenter=gl.getAttribLocation(P,'aCenter'),
-      aRad=gl.getAttribLocation(P,'aRad'),aInk=gl.getAttribLocation(P,'aInk'),aTilt=gl.getAttribLocation(P,'aTilt'),
+      aRad=gl.getAttribLocation(P,'aRad'),aTip=gl.getAttribLocation(P,'aTip'),aInk=gl.getAttribLocation(P,'aInk'),aTilt=gl.getAttribLocation(P,'aTilt'),
       aAzi=gl.getAttribLocation(P,'aAzi');
 const uRes=gl.getUniformLocation(P,'uRes'),uColor=gl.getUniformLocation(P,'uColor'),
       uGrain=gl.getUniformLocation(P,'uGrain'),uGrainPx=gl.getUniformLocation(P,'uGrainPx');
@@ -227,7 +253,7 @@ function smoothPath(pts){
       const B1x=((t2-t)*A1x+(t-t0)*A2x)/(t2-t0),B1y=((t2-t)*A1y+(t-t0)*A2y)/(t2-t0);
       const B2x=((t3-t)*A2x+(t-t1)*A3x)/(t3-t1),B2y=((t3-t)*A2y+(t-t1)*A3y)/(t3-t1);
       out.push({x:((t2-t)*B1x+(t-t1)*B2x)/(t2-t1), y:((t2-t)*B1y+(t-t1)*B2y)/(t2-t1),
-        hw:p1.hw+(p2.hw-p1.hw)*u, ink:p1.ink+(p2.ink-p1.ink)*u,
+        hw:p1.hw+(p2.hw-p1.hw)*u, tip:p1.tip+(p2.tip-p1.tip)*u, ink:p1.ink+(p2.ink-p1.ink)*u,
         tilt:p1.tilt+(p2.tilt-p1.tilt)*u, azi:p1.azi, pr:p1.pr+(p2.pr-p1.pr)*u}); }
   }
   out.push(pts[pts.length-1]);
@@ -237,9 +263,9 @@ function smoothPath(pts){
 function buildDabs(pts){
   if(pts.length<1) return new Float32Array(0);
   const inst=[];
-  function push(x,y,r,ink,tilt,azi){ inst.push(x,y,r,ink,tilt,azi); }
-  if(pts.length===1){ const p=pts[0]; push(p.x,p.y,p.hw,p.ink,p.tilt,p.azi); }
-  let carry=0, smR=null, smInk=null;
+  function push(x,y,r,tip,ink,tilt,azi){ inst.push(x,y,r,tip,ink,tilt,azi); }
+  if(pts.length===1){ const p=pts[0]; push(p.x,p.y,p.hw,p.tip,p.ink,p.tilt,p.azi); }
+  let carry=0, smR=null, smTip=null, smInk=null;
   for(let i=1;i<pts.length;i++){
     const a=pts[i-1], b=pts[i];
     let dx=b.x-a.x, dy=b.y-a.y; const seg=Math.hypot(dx,dy); if(seg<1e-4) continue;
@@ -249,13 +275,13 @@ function buildDabs(pts){
     let d=carry;
     while(d<=seg){
       const t=d/seg;
-      const r=a.hw+(b.hw-a.hw)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
+      const r=a.hw+(b.hw-a.hw)*t, tip=a.tip+(b.tip-a.tip)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
       const azi=Math.atan2(say+(sby-say)*t, cax+(cbx-cax)*t);
-      if(smR===null){ smR=r; smInk=ink; }
+      if(smR===null){ smR=r; smTip=tip; smInk=ink; }
       const sp=Math.max(0.2, smR*0.12);   // 間距＝半徑的 0.12（夠密，加成下不串珠）；下限 0.2
       const k=Math.min(1, sp/SMOOTH_LEN_PX);  // 距離域平滑：沿弧長壓掉壓力尖刺，與速度/密度無關
-      smR+=(r-smR)*k; smInk+=(ink-smInk)*k;
-      push(a.x+ux*d, a.y+uy*d, smR, smInk, tilt, azi);
+      smR+=(r-smR)*k; smTip+=(tip-smTip)*k; smInk+=(ink-smInk)*k;
+      push(a.x+ux*d, a.y+uy*d, smR, smTip, smInk, tilt, azi);
       d+=sp;
     }
     carry=d-seg;
@@ -263,7 +289,7 @@ function buildDabs(pts){
   return new Float32Array(inst);
 }
 function drawDabs(instData, targetFBO){
-  const nDab=instData.length/6; if(nDab<1) return;
+  const nDab=instData.length/7; if(nDab<1) return;
   gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO); gl.viewport(0,0,W,H);
   gl.useProgram(P); gl.uniform2f(uRes,W,H); gl.uniform3f(uColor,INK[0],INK[1],INK[2]);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,grainTex);
@@ -271,12 +297,13 @@ function drawDabs(instData, targetFBO){
   gl.bindBuffer(gl.ARRAY_BUFFER,quad); gl.enableVertexAttribArray(aCorner);
   gl.vertexAttribPointer(aCorner,2,gl.FLOAT,false,0,0); gl.vertexAttribDivisor(aCorner,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,bInst); gl.bufferData(gl.ARRAY_BUFFER,instData,gl.DYNAMIC_DRAW);
-  const st=24; // 6 floats
+  const st=28; // 7 floats
   gl.enableVertexAttribArray(aCenter); gl.vertexAttribPointer(aCenter,2,gl.FLOAT,false,st,0); gl.vertexAttribDivisor(aCenter,1);
   gl.enableVertexAttribArray(aRad); gl.vertexAttribPointer(aRad,1,gl.FLOAT,false,st,8); gl.vertexAttribDivisor(aRad,1);
-  gl.enableVertexAttribArray(aInk); gl.vertexAttribPointer(aInk,1,gl.FLOAT,false,st,12); gl.vertexAttribDivisor(aInk,1);
-  gl.enableVertexAttribArray(aTilt); gl.vertexAttribPointer(aTilt,1,gl.FLOAT,false,st,16); gl.vertexAttribDivisor(aTilt,1);
-  gl.enableVertexAttribArray(aAzi); gl.vertexAttribPointer(aAzi,1,gl.FLOAT,false,st,20); gl.vertexAttribDivisor(aAzi,1);
+  gl.enableVertexAttribArray(aTip); gl.vertexAttribPointer(aTip,1,gl.FLOAT,false,st,12); gl.vertexAttribDivisor(aTip,1);
+  gl.enableVertexAttribArray(aInk); gl.vertexAttribPointer(aInk,1,gl.FLOAT,false,st,16); gl.vertexAttribDivisor(aInk,1);
+  gl.enableVertexAttribArray(aTilt); gl.vertexAttribPointer(aTilt,1,gl.FLOAT,false,st,20); gl.vertexAttribDivisor(aTilt,1);
+  gl.enableVertexAttribArray(aAzi); gl.vertexAttribPointer(aAzi,1,gl.FLOAT,false,st,24); gl.vertexAttribDivisor(aAzi,1);
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,nDab);
   gl.vertexAttribDivisor(aCorner,0);
 }
@@ -320,12 +347,13 @@ function commitStroke(){
 let cur=null, sx=0, sy=0, smP=0.5, smT=0;     // 平滑後的壓力/傾斜（壓掉 Pencil 抖動尖刺＝細線串珠主因）
 const INPUT_SMOOTH = 0.18;                     // 壓力/傾斜低通：小=更平滑（抗尖刺）、大=更靈敏
 function widthInk(p,tilt){
-  const diaMM=NIB_MIN_MM+(NIB_MAX_MM-NIB_MIN_MM)*p;  // 壓力 → 尖端直徑(mm)
-  const widthMM=diaMM + TILT_BROAD_MM*Math.pow(tilt,TILT_CURVE);  // 傾斜額外鋪寬（削尖鉛筆側鋒）
-  const hw=Math.max(0.6*DPR, 0.5*PX_PER_MM*widthMM);
+  const diaMM=NIB_MIN_MM+(NIB_MAX_MM-NIB_MIN_MM)*p;  // 壓力 → 真正尖端直徑(mm)
+  const contactMM=diaMM + TILT_BROAD_MM*Math.pow(tilt,TILT_CURVE);  // 錐形側鋒的尖端→尾端接觸長度
+  const tip=Math.max(0.45*DPR, 0.5*PX_PER_MM*diaMM);
+  const hw=Math.max(tip, 0.5*PX_PER_MM*contactMM);
   let ink=0.16+0.84*p;          // 比 g3 更寬的動態範圍（輕觸更淡）
   ink*=(1-0.22*tilt);           // 側鋒較淡
-  return {hw,ink:Math.min(1,ink),tilt};
+  return {hw,tip,ink:Math.min(1,ink),tilt};
 }
 function pos(e){ return {x:e.clientX*DPR, y:e.clientY*DPR}; }
 function pressure(e){ let p=e.pressure; if(p===0||p==null)p=0.5; return Math.max(0.02,Math.min(1,p)); }
@@ -346,17 +374,17 @@ function dbgShow(e){
   const hasAzi=e.azimuthAngle!=null;
   const aziDeg=hasAzi?(e.azimuthAngle*180/Math.PI).toFixed(0)+'°':'—';
   dbgEl.textContent=(hasAlt?'alt':'⚠後備')+' '+altDeg.toFixed(0)+'° (最平 '+minAlt.toFixed(0)+'°) · tilt '+tl.toFixed(2)
-    +' · 寬 '+(wi.hw*2/PX_PER_MM).toFixed(1)+'mm · 壓 '+p.toFixed(2)+' · '+(hasAzi?'azi':'⚠無azi')+' '+aziDeg;
+    +' · 尖 '+(wi.tip*2/PX_PER_MM).toFixed(1)+'mm · 側鋒 '+(wi.hw*2/PX_PER_MM).toFixed(1)+'mm · 壓 '+p.toFixed(2)+' · '+(hasAzi?'azi':'⚠無azi')+' '+aziDeg;
 }
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
   const q=pos(e); sx=q.x; sy=q.y; smP=pressure(e); smT=tilt(e); const wi=widthInk(smP,smT);
-  cur=[{x:q.x,y:q.y,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(e),pr:pressure(e)}]; dbgShow(e); redraw(); }
+  cur=[{x:q.x,y:q.y,hw:wi.hw,tip:wi.tip,ink:wi.ink,tilt:wi.tilt,azi:azim(e),pr:pressure(e)}]; dbgShow(e); redraw(); }
 function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
   const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
   for(const ev of evs){ const q=pos(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
     smP+=(pressure(ev)-smP)*INPUT_SMOOTH; smT+=(tilt(ev)-smT)*INPUT_SMOOTH;  // 平滑壓力/傾斜，去尖刺
     const last=cur[cur.length-1], dx=sx-last.x, dy=sy-last.y;
-    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(smP,smT); cur.push({x:sx,y:sy,hw:wi.hw,ink:wi.ink,tilt:wi.tilt,azi:azim(ev),pr:pressure(ev)}); } }
+    if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(smP,smT); cur.push({x:sx,y:sy,hw:wi.hw,tip:wi.tip,ink:wi.ink,tilt:wi.tilt,azi:azim(ev),pr:pressure(ev)}); } }
   dbgShow(e); redraw(); }
 function up(e){ if(!cur)return; e.preventDefault(); commitStroke(); cur=null; redraw(); }
 cv.addEventListener('pointerdown',down,{passive:false});
