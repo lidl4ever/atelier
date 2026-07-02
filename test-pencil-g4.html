@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Atelier — GPU 鉛筆測試 g4 · v22 (debug)</title>
+<title>Atelier — GPU 鉛筆測試 g4 · v23 (debug)</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#FBF8F1;
     font-family:-apple-system,system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
@@ -22,7 +22,7 @@
 <canvas id="c"></canvas>
 <canvas id="ov" style="position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:5"></canvas>
 <div class="bar">
-  <span class="v">GPU 鉛筆 g4 · v22 · debug</span>
+  <span class="v">GPU 鉛筆 g4 · v23 · debug</span>
   <button id="mark">標記:關</button>
   <button id="blend">混合:MAX</button>
   <button id="clear">清除</button>
@@ -241,25 +241,30 @@ function buildFBOs(){ if(fboTex)gl.deleteTexture(fboTex); if(fbo)gl.deleteFrameb
 function resize(){ W=Math.round(innerWidth*DPR); H=Math.round(innerHeight*DPR); cv.width=W; cv.height=H; ov.width=W; ov.height=H; buildFBOs(); redraw(); }
 
 /* Centripetal Catmull-Rom 路徑平滑：不過衝、不自交（uniform 版會在不等距取樣處甩出小迴圈→串珠） */
+function smoothSegment(pts,i){
+  const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||pts[i+1];
+  const knot=(a,b)=>Math.max(1e-3, Math.pow((b.x-a.x)**2+(b.y-a.y)**2, 0.25)); // dist^0.5（alpha=0.5）
+  const t0=0, t1=t0+knot(p0,p1), t2=t1+knot(p1,p2), t3=t2+knot(p2,p3);
+  const segLen=Math.hypot(p2.x-p1.x,p2.y-p1.y);
+  const steps=Math.max(1,Math.ceil(segLen/3));   // 每 ~3px 一個平滑子點
+  const out=[];
+  for(let s=0;s<steps;s++){ const u=s/steps, t=t1+(t2-t1)*u;
+    const lx=(ax,bx,ta,tb)=>((tb-t)*ax+(t-ta)*bx)/(tb-ta);
+    const A1x=lx(p0.x,p1.x,t0,t1),A1y=lx(p0.y,p1.y,t0,t1);
+    const A2x=lx(p1.x,p2.x,t1,t2),A2y=lx(p1.y,p2.y,t1,t2);
+    const A3x=lx(p2.x,p3.x,t2,t3),A3y=lx(p2.y,p3.y,t2,t3);
+    const B1x=((t2-t)*A1x+(t-t0)*A2x)/(t2-t0),B1y=((t2-t)*A1y+(t-t0)*A2y)/(t2-t0);
+    const B2x=((t3-t)*A2x+(t-t1)*A3x)/(t3-t1),B2y=((t3-t)*A2y+(t-t1)*A3y)/(t3-t1);
+    out.push({x:((t2-t)*B1x+(t-t1)*B2x)/(t2-t1), y:((t2-t)*B1y+(t-t1)*B2y)/(t2-t1),
+      hw:p1.hw+(p2.hw-p1.hw)*u, tip:p1.tip+(p2.tip-p1.tip)*u, ink:p1.ink+(p2.ink-p1.ink)*u,
+      tilt:p1.tilt+(p2.tilt-p1.tilt)*u, azi:p1.azi, pr:p1.pr+(p2.pr-p1.pr)*u}); }
+  return out;
+}
 function smoothPath(pts){
   if(pts.length<3) return pts;
   const out=[];
-  const knot=(a,b)=>Math.max(1e-3, Math.pow((b.x-a.x)**2+(b.y-a.y)**2, 0.25)); // dist^0.5（alpha=0.5）
   for(let i=0;i<pts.length-1;i++){
-    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||pts[i+1];
-    const t0=0, t1=t0+knot(p0,p1), t2=t1+knot(p1,p2), t3=t2+knot(p2,p3);
-    const segLen=Math.hypot(p2.x-p1.x,p2.y-p1.y);
-    const steps=Math.max(1,Math.ceil(segLen/3));   // 每 ~3px 一個平滑子點
-    for(let s=0;s<steps;s++){ const u=s/steps, t=t1+(t2-t1)*u;
-      const lx=(ax,bx,ta,tb)=>((tb-t)*ax+(t-ta)*bx)/(tb-ta);
-      const A1x=lx(p0.x,p1.x,t0,t1),A1y=lx(p0.y,p1.y,t0,t1);
-      const A2x=lx(p1.x,p2.x,t1,t2),A2y=lx(p1.y,p2.y,t1,t2);
-      const A3x=lx(p2.x,p3.x,t2,t3),A3y=lx(p2.y,p3.y,t2,t3);
-      const B1x=((t2-t)*A1x+(t-t0)*A2x)/(t2-t0),B1y=((t2-t)*A1y+(t-t0)*A2y)/(t2-t0);
-      const B2x=((t3-t)*A2x+(t-t1)*A3x)/(t3-t1),B2y=((t3-t)*A2y+(t-t1)*A3y)/(t3-t1);
-      out.push({x:((t2-t)*B1x+(t-t1)*B2x)/(t2-t1), y:((t2-t)*B1y+(t-t1)*B2y)/(t2-t1),
-        hw:p1.hw+(p2.hw-p1.hw)*u, tip:p1.tip+(p2.tip-p1.tip)*u, ink:p1.ink+(p2.ink-p1.ink)*u,
-        tilt:p1.tilt+(p2.tilt-p1.tilt)*u, azi:p1.azi, pr:p1.pr+(p2.pr-p1.pr)*u}); }
+    out.push(...smoothSegment(pts,i));
   }
   out.push(pts[pts.length-1]);
   return out;
@@ -315,16 +320,70 @@ function drawDabs(instData, targetFBO){
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,nDab);
   gl.vertexAttribDivisor(aCorner,0);
 }
+function makeDabState(){ return {last:null,carry:0,smR:null,smTip:null,smInk:null}; }
+function pushDabSegment(a,b,st,inst){
+  let dx=b.x-a.x, dy=b.y-a.y; const seg=Math.hypot(dx,dy); if(seg<1e-4) return;
+  const ux=dx/seg, uy=dy/seg;
+  const cax=Math.cos(a.azi), say=Math.sin(a.azi), cbx=Math.cos(b.azi), sby=Math.sin(b.azi);
+  let d=st.carry;
+  while(d<=seg){
+    const t=d/seg;
+    const r=a.hw+(b.hw-a.hw)*t, tip=a.tip+(b.tip-a.tip)*t, ink=a.ink+(b.ink-a.ink)*t, tilt=a.tilt+(b.tilt-a.tilt)*t;
+    const azi=Math.atan2(say+(sby-say)*t, cax+(cbx-cax)*t);
+    if(st.smR===null){ st.smR=r; st.smTip=tip; st.smInk=ink; }
+    const wideSp=Math.max(0.2, st.smR*DAB_STEP_RAD);
+    const tipSp=Math.max(DAB_STEP_MIN, st.smTip*DAB_STEP_TIP);
+    const tiltDense=Math.max(0,Math.min(1,(tilt-0.12)/0.38));
+    const sp=wideSp+(Math.min(wideSp,tipSp)-wideSp)*tiltDense;
+    const k=Math.min(1, sp/SMOOTH_LEN_PX);
+    st.smR+=(r-st.smR)*k; st.smTip+=(tip-st.smTip)*k; st.smInk+=(ink-st.smInk)*k;
+    inst.push(a.x+ux*d, a.y+uy*d, st.smR, st.smTip, st.smInk, tilt, azi);
+    d+=sp;
+  }
+  st.carry=d-seg;
+}
+let strokeRun=null;
+function clearStrokeBuffer(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function beginStrokeRun(firstPoint){
+  clearStrokeBuffer();
+  strokeRun={nextSeg:0,dab:makeDabState()};
+  gl.enable(gl.BLEND); strokeBlend();
+  drawDabs(new Float32Array([firstPoint.x,firstPoint.y,firstPoint.hw,firstPoint.tip,firstPoint.ink,firstPoint.tilt,firstPoint.azi]), sbo);
+  strokeRun.dab.last=firstPoint;
+}
+function drawStrokeInst(inst){
+  if(inst.length){ gl.enable(gl.BLEND); strokeBlend(); drawDabs(new Float32Array(inst), sbo); }
+}
+function appendStrokePoints(points,inst=null){
+  if(!strokeRun || points.length<1) return;
+  const ownInst=!inst; if(ownInst) inst=[];
+  const st=strokeRun.dab;
+  for(const p of points){
+    if(st.last) pushDabSegment(st.last,p,st,inst);
+    st.last=p;
+  }
+  if(ownInst) drawStrokeInst(inst);
+}
+function renderStrokeIncremental(final=false){
+  if(!strokeRun || !cur || cur.length<2) return;
+  const inst=[];
+  const lastSeg=final ? cur.length-2 : cur.length-3; // live drawing waits one point so Catmull-Rom control is stable
+  while(strokeRun.nextSeg<=lastSeg){
+    appendStrokePoints(smoothSegment(cur,strokeRun.nextSeg),inst);
+    strokeRun.nextSeg++;
+  }
+  if(final) appendStrokePoints([cur[cur.length-1]],inst);
+  drawStrokeInst(inst);
+}
 function blit(tex,alpha){ gl.useProgram(BP); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,tex);
   gl.uniform1i(uTex,0); gl.uniform1f(uAlpha,alpha);
   gl.bindBuffer(gl.ARRAY_BUFFER,bQuad); gl.enableVertexAttribArray(bpLoc); gl.vertexAttribPointer(bpLoc,2,gl.FLOAT,false,0,0);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4); }
 
 function redraw(){
-  // 1) 當前筆 → strokeBuf（MAX，避免重疊變黑）
-  gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  if(cur && cur.length>=1){ gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(smoothPath(cur)), sbo); }
-  // 2) 畫面：紙底 + committed + strokeBuf
+  // 畫面：紙底 + committed + strokeBuf。當前筆已增量畫進 strokeBuf，不在每幀重建整筆。
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H);
   gl.clearColor(0.984,0.972,0.945,1); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
@@ -343,11 +402,12 @@ function strokeBlend(){
 }
 function commitStroke(){
   if(!cur||cur.length<1) return;
-  gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.enable(gl.BLEND); strokeBlend(); drawDabs(buildDabs(smoothPath(cur)), sbo);
+  renderStrokeIncremental(true);
   gl.bindFramebuffer(gl.FRAMEBUFFER,fbo); gl.viewport(0,0,W,H);
   gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); blit(sboTex,1.0);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  clearStrokeBuffer();
+  strokeRun=null;
   for(const p of cur) allPts.push({x:p.x,y:p.y,pr:p.pr||0});  // 記錄取樣點供診斷
 }
 
@@ -386,20 +446,22 @@ function dbgShow(e){
 }
 function down(e){ if(e.pointerType==='touch')return; e.preventDefault();
   const q=pos(e); sx=q.x; sy=q.y; smP=pressure(e); smT=tilt(e); const wi=widthInk(smP,smT);
-  cur=[{x:q.x,y:q.y,hw:wi.hw,tip:wi.tip,ink:wi.ink,tilt:wi.tilt,azi:azim(e),pr:pressure(e)}]; dbgShow(e); redraw(); }
+  cur=[{x:q.x,y:q.y,hw:wi.hw,tip:wi.tip,ink:wi.ink,tilt:wi.tilt,azi:azim(e),pr:pressure(e)}];
+  beginStrokeRun(cur[0]); dbgShow(e); redraw(); }
 function move(e){ if(!cur||e.pointerType==='touch')return; e.preventDefault();
   const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
   for(const ev of evs){ const q=pos(ev); sx+=(q.x-sx)*.5; sy+=(q.y-sy)*.5;
     smP+=(pressure(ev)-smP)*INPUT_SMOOTH; smT+=(tilt(ev)-smT)*INPUT_SMOOTH;  // 平滑壓力/傾斜，去尖刺
     const last=cur[cur.length-1], dx=sx-last.x, dy=sy-last.y;
     if(dx*dx+dy*dy>=(1.0*DPR)*(1.0*DPR)){ const wi=widthInk(smP,smT); cur.push({x:sx,y:sy,hw:wi.hw,tip:wi.tip,ink:wi.ink,tilt:wi.tilt,azi:azim(ev),pr:pressure(ev)}); } }
+  renderStrokeIncremental(false);
   dbgShow(e); redraw(); }
 function up(e){ if(!cur)return; e.preventDefault(); commitStroke(); cur=null; redraw(); }
 cv.addEventListener('pointerdown',down,{passive:false});
 cv.addEventListener('pointermove',move,{passive:false});
 cv.addEventListener('pointerup',up,{passive:false});
 cv.addEventListener('pointercancel',up,{passive:false});
-document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); minAlt=90; allPts=[]; redraw(); });
+document.getElementById('clear').addEventListener('click',()=>{ buildFBOs(); minAlt=90; allPts=[]; cur=null; strokeRun=null; redraw(); });
 document.getElementById('mark').addEventListener('click',(e)=>{ showMarks=!showMarks; e.target.textContent='標記:'+(showMarks?'開':'關'); redraw(); });
 document.getElementById('blend').addEventListener('click',(e)=>{ USE_MAX=!USE_MAX; e.target.textContent='混合:'+(USE_MAX?'MAX':'疊加'); });
 addEventListener('resize',resize);
