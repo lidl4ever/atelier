@@ -72,28 +72,63 @@ button{font-family:inherit;border:none;background:none;color:inherit;cursor:poin
   background:var(--chrome);backdrop-filter:blur(18px);border:1px solid var(--line);
   border-radius:99px;padding:10px 18px;box-shadow:var(--shadow);max-width:40vw;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-#dock{bottom:calc(env(safe-area-inset-bottom) + 16px);left:50%;transform:translateX(-50%)}
-#grades{bottom:calc(env(safe-area-inset-bottom) + 86px);left:50%;transform:translateX(-50%);display:none;padding:5px}
+#dock{left:50%;bottom:calc(env(safe-area-inset-bottom) + 14px);transform:translateX(-50%)}
+#grades{bottom:calc(env(safe-area-inset-bottom) + 190px);left:50%;transform:translateX(-50%);display:none;padding:5px}
 #grades.show{display:flex}
 #grades button{width:auto;min-width:38px;height:34px;border-radius:99px;padding:0 9px;
   font-size:12.5px;font-weight:600;letter-spacing:.02em}
-#colorBtn span{width:24px;height:24px;border-radius:50%;display:block;border:2px solid rgba(255,255,255,.85);
-  box-shadow:0 0 0 1px var(--line), inset 0 1px 2px rgba(0,0,0,.15)}
-#sizeBtn i{border-radius:50%;background:currentColor;display:block}
 svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+/* ───── 工具托盤 ───── */
+.tool-dock{
+  width:min(96vw,980px);height:166px;overflow:hidden;border-radius:18px;
+  background:linear-gradient(180deg,rgba(42,42,39,.96),rgba(30,31,29,.96));
+  box-shadow:0 26px 90px rgba(20,18,15,.30),0 2px 8px rgba(0,0,0,.20);
+  border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+  display:grid;grid-template-rows:58px 108px;transition:opacity .28s,transform .42s cubic-bezier(.2,.9,.2,1);
+}
+.tool-dock::before{content:"";position:absolute;inset:0 0 auto;height:60px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,0));pointer-events:none}
+.dock-top{display:grid;grid-template-columns:56px 1fr 56px;align-items:center;padding:8px 18px 5px;gap:10px}
+.dock-action{width:42px;height:42px;border-radius:13px;color:rgba(255,255,255,.9);display:flex;align-items:center;justify-content:center;
+  transition:transform .2s cubic-bezier(.2,.9,.3,1.3),background .18s}
+.dock-action:active{transform:scale(.88) rotate(-4deg);background:rgba(255,255,255,.08)}
+.quick-colors{justify-self:center;display:flex;align-items:center;gap:11px;padding:8px 12px;border-radius:999px;background:rgba(8,8,8,.26);box-shadow:inset 0 1px 7px rgba(0,0,0,.38)}
+.quick-colors button{width:30px;height:30px;border-radius:50%;border:2px solid rgba(0,0,0,.25);box-shadow:inset 0 1px 3px rgba(255,255,255,.18),0 4px 10px rgba(0,0,0,.25);
+  transition:transform .2s cubic-bezier(.2,.9,.3,1.5),box-shadow .2s,border-color .2s}
+.quick-colors button.on{transform:translateY(-2px) scale(1.18);border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.92),0 8px 18px rgba(0,0,0,.34),inset 0 1px 3px rgba(255,255,255,.2)}
+.dock-bottom{display:grid;grid-template-columns:1fr auto;min-width:0;background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.035)}
+.tool-rail{display:flex;align-items:end;gap:18px;overflow-x:auto;overflow-y:hidden;padding:10px 20px 0;scroll-snap-type:x proximity;touch-action:pan-x}
+.tool-btn{width:78px;height:96px;flex:0 0 78px;position:relative;display:flex;align-items:end;justify-content:center;scroll-snap-align:center;border-radius:16px;color:#fff;
+  transition:transform .26s cubic-bezier(.2,.9,.2,1.25),filter .22s,opacity .22s}
+.tool-btn::before{content:"";position:absolute;left:8px;right:8px;bottom:4px;height:18px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(0,0,0,.42),transparent 70%);filter:blur(7px);transition:transform .26s,opacity .22s}
+.tool-btn .tool-art{position:relative;width:76px;height:94px;display:flex;align-items:end;justify-content:center;filter:drop-shadow(0 14px 14px rgba(0,0,0,.34));transform-origin:50% 86%;transition:transform .28s cubic-bezier(.2,.9,.2,1.25)}
+.tool-btn svg.tool-illus{width:76px;height:94px;overflow:visible}
+.tool-btn:not(.on){opacity:.68;filter:saturate(.8) brightness(.82)}
+.tool-btn.on{transform:translateY(-13px)}
+.tool-btn.on .tool-art{transform:scale(1.08) rotate(-2deg)}
+.tool-btn.on::after{content:"";position:absolute;left:18px;right:18px;bottom:0;height:3px;border-radius:99px;background:linear-gradient(90deg,#77d5e7,#f0ca55);box-shadow:0 0 18px rgba(119,213,231,.55)}
+.tool-btn:active .tool-art{transform:translateY(4px) scale(.96) rotate(2deg)}
+.tool-btn.pop .tool-art{animation:toolPop .38s cubic-bezier(.2,.9,.2,1.35)}
+@keyframes toolPop{0%{transform:translateY(2px) scale(.92)}55%{transform:translateY(-9px) scale(1.12) rotate(-3deg)}100%{transform:scale(1.08) rotate(-2deg)}}
+.dock-controls{display:flex;align-items:center;gap:14px;padding:10px 22px 10px 8px}
+.color-orb,.size-orb{width:74px;height:74px;border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center;transition:transform .22s cubic-bezier(.2,.9,.2,1.25),filter .22s}
+.color-orb{background:conic-gradient(from 20deg,#f1cc57,#8ec1aa,#65b8d1,#f1cc57);border:4px solid #070707;box-shadow:0 15px 26px rgba(0,0,0,.38),inset 0 0 0 1px rgba(255,255,255,.28)}
+.color-orb span{width:42px;height:42px;border-radius:50%;display:block;background:var(--ink);border:2.5px solid rgba(255,255,255,.95);box-shadow:0 7px 14px rgba(0,0,0,.18)}
+.size-orb{background:linear-gradient(180deg,#3b3d3a,#171816);border:1px solid rgba(255,255,255,.08);box-shadow:0 14px 24px rgba(0,0,0,.34)}
+.size-orb i{border-radius:50%;background:#e8e3d7;display:block;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.color-orb:active,.size-orb:active{transform:scale(.92)}
 /* 面板 */
 .panel{position:absolute;z-index:11;background:var(--chrome);backdrop-filter:blur(22px);
   -webkit-backdrop-filter:blur(22px);border:1px solid var(--line);border-radius:18px;
   box-shadow:var(--shadow);padding:16px;display:none}
 .panel.show{display:block}
 .panel h3{font-size:11px;letter-spacing:.18em;color:var(--ink-soft);font-weight:600;margin-bottom:12px}
-#colorPanel{bottom:calc(env(safe-area-inset-bottom) + 92px);left:50%;transform:translateX(-50%);width:312px}
+#colorPanel{bottom:calc(env(safe-area-inset-bottom) + 206px);left:50%;transform:translateX(-50%);width:312px}
 #swatches{display:grid;grid-template-columns:repeat(8,1fr);gap:9px}
 #swatches button{width:30px;height:30px;border-radius:50%;border:1px solid rgba(0,0,0,.08);transition:transform .12s}
 #swatches button.on{transform:scale(1.22);box-shadow:0 0 0 2px var(--canvas-paper),0 0 0 3.5px var(--ink)}
 #customColor{margin-top:14px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-soft)}
 #customColor input{width:44px;height:32px;border:none;background:none}
-#sizePanel{bottom:calc(env(safe-area-inset-bottom) + 92px);left:50%;transform:translateX(-50%);width:300px}
+#sizePanel{bottom:calc(env(safe-area-inset-bottom) + 206px);left:50%;transform:translateX(-50%);width:300px}
 .sizeRow{display:flex;align-items:center;gap:14px}
 .sizeRow input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line)}
 .sizeRow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;
@@ -132,10 +167,34 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
 #exportOv .btns button{padding:12px 28px;border-radius:99px;font-size:14px}
 #exportOv .dl{background:var(--accent);color:#FBF8F1}
 #exportOv .cl{background:rgba(251,248,241,.18);color:#FBF8F1}
-#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 100px);transform:translateX(-50%) translateY(20px);
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 196px);transform:translateX(-50%) translateY(20px);
   z-index:60;background:var(--ink);color:var(--canvas-paper);padding:11px 22px;border-radius:99px;
   font-size:13px;opacity:0;pointer-events:none;transition:all .3s;white-space:nowrap}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (max-width:720px){
+  .tool-dock{width:calc(100vw - 20px);height:156px;grid-template-rows:54px 102px;border-radius:16px}
+  .tool-rail{gap:12px;padding-inline:14px}.tool-btn{width:66px;flex-basis:66px}.tool-btn .tool-art,.tool-btn svg.tool-illus{width:66px}
+  .dock-controls{gap:9px;padding-right:14px}.color-orb,.size-orb{width:62px;height:62px}.color-orb span{width:34px;height:34px}
+  #grades{bottom:calc(env(safe-area-inset-bottom) + 176px)}
+  #colorPanel,#sizePanel{bottom:calc(env(safe-area-inset-bottom) + 192px)}
+}
+@media (orientation:landscape) and (max-height:780px){
+  #dock{left:calc(env(safe-area-inset-left) + 14px);top:50%;bottom:auto;transform:translateY(-50%)}
+  #topL{left:calc(env(safe-area-inset-left) + 158px)}
+  .tool-dock{width:128px;height:min(88vh,680px);grid-template-rows:254px 1fr;border-radius:18px}
+  .dock-top{grid-template-columns:1fr;grid-template-rows:42px 1fr 42px;padding:12px 10px;justify-items:center}
+  .quick-colors{display:grid;grid-template-columns:repeat(2,26px);gap:7px;padding:9px 8px}.quick-colors button{width:26px;height:26px}
+  .dock-bottom{grid-template-columns:1fr;grid-template-rows:1fr auto;min-height:0}
+  .tool-rail{flex-direction:column;align-items:center;gap:12px;overflow-x:hidden;overflow-y:auto;padding:12px 8px;touch-action:pan-y;scroll-snap-type:y proximity}
+  .tool-btn{width:78px;height:88px;flex:0 0 88px}.tool-btn.on{transform:translateX(10px)}
+  .dock-controls{padding:8px 0 13px;justify-content:center}.color-orb,.size-orb{width:54px;height:54px}.color-orb span{width:30px;height:30px}
+  #grades{left:calc(env(safe-area-inset-left) + 158px);top:50%;bottom:auto;transform:translateY(-50%);flex-direction:column}
+  #colorPanel,#sizePanel{left:calc(env(safe-area-inset-left) + 158px);bottom:24px;transform:none}
+  #toast{left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px)}
+}
+@media (prefers-reduced-motion:reduce){
+  .tool-dock,.tool-btn,.tool-btn .tool-art,.dock-action,.quick-colors button,.color-orb,.size-orb{transition:none!important;animation:none!important}
+}
 ::-webkit-scrollbar{display:none}
 </style>
 </head>
@@ -169,17 +228,19 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
     </div>
   </div>
 
-  <div class="chrome pill" id="dock">
-    <button data-tool="pencil" title="鉛筆"><svg class="ic" viewBox="0 0 24 24"><path d="M4 20l1.2-4.5L16.5 4.2a2 2 0 0 1 2.8 0l.5.5a2 2 0 0 1 0 2.8L8.5 18.8 4 20z"/></svg></button>
-    <button data-tool="pen" title="墨水筆"><svg class="ic" viewBox="0 0 24 24"><path d="M5 19c6-1 9-3 11.5-8.5L19 5l-5.5 2.5C8 10 7 13 5 19z"/><path d="M5 19l6-6"/></svg></button>
-    <button data-tool="brush" title="毛筆"><svg class="ic" viewBox="0 0 24 24"><path d="M17.5 3.5c1.5-1 3.5.8 2.6 2.4L13 16c-.3.5-.8.9-1.4 1l-2.3.4.4-2.3c.1-.6.5-1.1 1-1.4l6.8-10.2z"/><path d="M9.5 17.5c-.5 2-2 3.5-5.5 3 .8-1.2.6-2.3 1.5-3.2.9-.9 2.5-1 4 .2z"/></svg></button>
-    <button data-tool="marker" title="麥克筆"><svg class="ic" viewBox="0 0 24 24"><path d="M9 4h6v8l1.5 3v5h-9v-5L9 12V4z"/><path d="M9 8h6"/></svg></button>
-    <button data-tool="water" title="水彩"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3.5S6 10.5 6 14.5a6 6 0 0 0 12 0c0-4-6-11-6-11z"/></svg></button>
-    <button data-tool="eraser" title="橡皮擦"><svg class="ic" viewBox="0 0 24 24"><path d="M6.5 19.5L3 16l9.5-9.5a2 2 0 0 1 2.8 0l4.2 4.2a2 2 0 0 1 0 2.8L13 20H7l-.5-.5z"/><path d="M9 9l6 6"/></svg></button>
-    <button data-tool="smudge" title="塗抹"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4a8 8 0 0 1 8 8c0 2-1 4-2.5 5.5"/><path d="M12 8a4 4 0 0 1 4 4c0 3-1.5 5.5-4.5 7"/><path d="M8.5 5a8 8 0 0 0-3.6 11.5"/><path d="M12 12c0 2.5-1.5 4.5-3.5 6"/></svg></button>
-    <div class="sep"></div>
-    <button id="colorBtn" title="顏色"><span></span></button>
-    <button id="sizeBtn" title="筆刷大小"><i></i></button>
+  <div class="chrome tool-dock" id="dock" aria-label="工具列">
+    <div class="dock-top">
+      <button class="dock-action" id="quickAddLayer" title="新增圖層" aria-label="新增圖層"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+      <div class="quick-colors" id="quickColors" aria-label="快速顏色"></div>
+      <button class="dock-action" id="quickClearLayer" title="清除目前圖層" aria-label="清除目前圖層"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M7 7l1 13h8l1-13"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
+    </div>
+    <div class="dock-bottom">
+      <div class="tool-rail" id="toolRail"></div>
+      <div class="dock-controls">
+        <button class="color-orb" id="colorBtn" title="顏色" aria-label="顏色"><span></span></button>
+        <button class="size-orb" id="sizeBtn" title="筆刷大小" aria-label="筆刷大小"><i></i></button>
+      </div>
+    </div>
   </div>
 
   <div class="chrome pill" id="grades"></div>
@@ -249,7 +310,7 @@ const DB = {
 };
 
 /* ════════════════ 全域狀態 ════════════════ */
-const APP_VERSION = 'v2.1';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
+const APP_VERSION = 'v2.2';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
 const PAPER = '#FBF8F1';
 const S = {
   doc:null,            // {id,name,w,h,scale,layers:[{canvas,ctx,visible,opacity}],active}
@@ -422,6 +483,204 @@ function pencilStamp(ctx,X,Y,r,alpha,tile,inner,ang,arc,streak){
   applyStreaks(d,ang,arc,streak);
   ctx.globalAlpha=alpha; ctx.drawImage(pcv,0,0,d,d,ox,oy,d,d); ctx.globalAlpha=1;
 }
+/* ── GPU 鉛筆 g4/v23：MAX 筆畫緩衝 + 錐形側鋒，輸出透明鉛筆圖層 ── */
+const GPencil=(()=>{
+  const canvas=document.createElement('canvas');
+  const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,premultipliedAlpha:true,preserveDrawingBuffer:true});
+  if(!gl) return {ok:false,canvas};
+  const P0={GRAIN_PX:200/2.5,GRAIN_DEPTH:.42,EDGE_BITE:.60,DAB_FLOW:.62,TAIL_SIGN:1,TAIL_WIDTH:.38,NOSE_WIDTH:.18,TAIL_TONE:.62,
+    SMOOTH_LEN_PX:9,DAB_STEP_RAD:.12,DAB_STEP_TIP:1.35,EDGE_SOFT_TIP:.22,EDGE_SOFT_FLAT:.34,
+    NIB_MIN_MM:.32,NIB_MAX_MM:.77,TILT_BROAD_MM:23.5,TILT_CURVE:2};
+  let W=0,H=0,scale=2,pxPerMM=132*2/25.4,grainPx=P0.GRAIN_PX*2;
+  let sbo=null,sboTex=null,run=null,ink=[.17,.16,.14];
+  const sh=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.warn(gl.getShaderInfoLog(o));return o;};
+  const prog=(vs,fs)=>{const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);
+    if(!gl.getProgramParameter(p,gl.LINK_STATUS))console.warn(gl.getProgramInfoLog(p));return p;};
+  const VS=`#version 300 es
+in vec2 aCorner; in vec2 aCenter; in float aRad, aTip, aInk, aTilt, aAzi;
+uniform vec2 uRes;
+out vec2 vBrush; out vec2 vWorld;
+out float vRad; out float vTip; out float vNose; out float vTail; out float vBack; out float vInk; out float vTilt;
+void main(){
+  float tilt=clamp(aTilt,0.,1.);
+  vec2 tailDir=${P0.TAIL_SIGN.toFixed(1)}*vec2(cos(aAzi),sin(aAzi));
+  vec2 side=vec2(-tailDir.y,tailDir.x);
+  float tip=max(aTip,0.5);
+  float tail=max(tip, mix(aRad, aRad*${P0.TAIL_WIDTH}, tilt));
+  float nose=max(tip, mix(aRad, aRad*${P0.NOSE_WIDTH}, tilt));
+  float front=mix(aRad, tip, tilt);
+  float rear=max(front, aRad*2.0-front);
+  float back=max(0.0, rear-tail);
+  float along=mix(-front, rear, aCorner.x*0.5+0.5);
+  float across=aCorner.y*max(tail,nose);
+  vec2 pos=aCenter+tailDir*along+side*across;
+  vBrush=vec2(along,across); vWorld=pos;
+  vRad=aRad; vTip=tip; vNose=nose; vTail=tail; vBack=back; vInk=aInk; vTilt=tilt;
+  vec2 c=(pos/uRes)*2.0-1.0; c.y=-c.y; gl_Position=vec4(c,0.,1.);
+}`;
+  const FS=`#version 300 es
+precision highp float;
+in vec2 vBrush; in vec2 vWorld;
+in float vRad; in float vTip; in float vNose; in float vTail; in float vBack; in float vInk; in float vTilt;
+uniform vec3 uColor; uniform sampler2D uGrain; uniform float uGrainPx;
+out vec4 frag;
+void main(){
+  float tilted=smoothstep(0.04,0.22,clamp(vTilt,0.,1.));
+  float circleEdge=length(vBrush)/max(vRad,1.);
+  float s=clamp(vBrush.x/max(vBack,1.),0.,1.);
+  float halfW=mix(vNose,vTail,smoothstep(0.,1.,s));
+  float wedgeEdge;
+  if(vBrush.x<0.) wedgeEdge=length(vec2(vBrush.x/max(vTip,1.), vBrush.y/max(vNose,1.)));
+  else if(vBrush.x>vBack) wedgeEdge=length(vec2((vBrush.x-vBack)/max(vTail,1.), vBrush.y/max(vTail,1.)));
+  else wedgeEdge=abs(vBrush.y)/max(halfW,1.);
+  float edge=mix(circleEdge,wedgeEdge,tilted);
+  if(edge>1.0) discard;
+  float soft=mix(${P0.EDGE_SOFT_TIP},${P0.EDGE_SOFT_FLAT},clamp(vTilt,0.,1.));
+  float env=1.0-smoothstep(1.0-soft,1.0,edge);
+  vec2 gw=mat2(0.866,-0.5,0.5,0.866)*vWorld; gw.y*=0.85;
+  float t=texture(uGrain, gw/uGrainPx).r;
+  float tail01=mix(0.0,s,tilted);
+  float axial=mix(1.0, mix(1.0,${P0.TAIL_TONE},tail01), tilted);
+  float local=clamp(vInk,0.,1.)*axial;
+  float bite=(1.0-t)*${P0.GRAIN_DEPTH} + (1.0-env)*${P0.EDGE_BITE};
+  float cov=clamp(local-bite, 0.0, 1.0) * ${P0.DAB_FLOW};
+  if(cov<=0.003) discard;
+  frag=vec4(uColor*cov,cov);
+}`;
+  const BVS=`#version 300 es
+in vec2 p; out vec2 uv; void main(){ uv=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }`;
+  const BFS=`#version 300 es
+precision highp float; in vec2 uv; uniform sampler2D tex; out vec4 o; void main(){ o=texture(tex,uv); }`;
+  const P=prog(VS,FS), BP=prog(BVS,BFS);
+  const quad=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,quad); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const bInst=gl.createBuffer(), bQuad=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,bQuad); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+  const loc={corner:gl.getAttribLocation(P,'aCorner'),center:gl.getAttribLocation(P,'aCenter'),rad:gl.getAttribLocation(P,'aRad'),tip:gl.getAttribLocation(P,'aTip'),
+    ink:gl.getAttribLocation(P,'aInk'),tilt:gl.getAttribLocation(P,'aTilt'),azi:gl.getAttribLocation(P,'aAzi'),
+    res:gl.getUniformLocation(P,'uRes'),color:gl.getUniformLocation(P,'uColor'),grain:gl.getUniformLocation(P,'uGrain'),grainPx:gl.getUniformLocation(P,'uGrainPx'),
+    bp:gl.getAttribLocation(BP,'p'),tex:gl.getUniformLocation(BP,'tex')};
+  function makeGrainTexture(N){
+    const data=new Uint8Array(N*N); let seed=0x9e3779b9>>>0;
+    const rnd=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+    const octs=[{g:N>>1,a:.62},{g:Math.round(N/3.4),a:.28},{g:N>>3,a:.10}];
+    const grids=octs.map(o=>{const arr=new Float32Array(o.g*o.g);for(let i=0;i<arr.length;i++)arr[i]=rnd();return arr;});
+    const sm=t=>t*t*(3-2*t); let tot=0; octs.forEach(o=>tot+=o.a);
+    for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+      let v=0;
+      for(let k=0;k<octs.length;k++){
+        const G=octs[k].g, grid=grids[k], fx=x/N*G, fy=y/N*G, ix=Math.floor(fx), iy=Math.floor(fy);
+        const x0=((ix%G)+G)%G, y0=((iy%G)+G)%G, x1=(x0+1)%G, y1=(y0+1)%G, tx=sm(fx-ix), ty=sm(fy-iy);
+        const a=grid[y0*G+x0], b=grid[y0*G+x1], c=grid[y1*G+x0], d=grid[y1*G+x1];
+        v+=octs[k].a*((a+(b-a)*tx)+((c+(d-c)*tx)-(a+(b-a)*tx))*ty);
+      }
+      v=0.5+(v/tot-0.5)*1.30; data[y*N+x]=Math.max(0,Math.min(255,Math.round(v*255)));
+    }
+    const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT,1); gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,N,N,0,gl.RED,gl.UNSIGNED_BYTE,data);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.generateMipmap(gl.TEXTURE_2D); return tex;
+  }
+  const grainTex=makeGrainTexture(512);
+  function mkFBO(){ const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+    return {f,tex}; }
+  function resize(doc){
+    if(W===doc.w&&H===doc.h) return;
+    W=canvas.width=doc.w; H=canvas.height=doc.h; scale=doc.scale||Math.min(devicePixelRatio||1,2);
+    pxPerMM=132*scale/25.4; grainPx=P0.GRAIN_PX*scale;
+    if(sboTex) gl.deleteTexture(sboTex); if(sbo) gl.deleteFramebuffer(sbo);
+    const b=mkFBO(); sbo=b.f; sboTex=b.tex; clear(); present();
+  }
+  function clear(){ gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); }
+  function setColor(hex){
+    const m=hex.replace('#',''); const n=m.length===3?m.split('').map(x=>x+x).join(''):m;
+    ink=[parseInt(n.slice(0,2),16)/255,parseInt(n.slice(2,4),16)/255,parseInt(n.slice(4,6),16)/255];
+  }
+  function widthInk(p,tilt){
+    const diaMM=P0.NIB_MIN_MM+(P0.NIB_MAX_MM-P0.NIB_MIN_MM)*p;
+    const contactMM=diaMM + P0.TILT_BROAD_MM*Math.pow(tilt,P0.TILT_CURVE);
+    const tip=Math.max(.45*scale, .5*pxPerMM*diaMM);
+    const hw=Math.max(tip, .5*pxPerMM*contactMM);
+    const gradeInk={ '3H':.62,'2H':.70,'H':.82,'HB':1,'B':1.06,'2B':1.12,'4B':1.18,'6B':1.24,'9B':1.30,'炭筆':1.38 };
+    let localInk=(.16+.84*p)*(1-.22*tilt)*(gradeInk[S.grade]||1);
+    return {hw,tip,ink:Math.min(1,localInk),tilt};
+  }
+  function point(x,y,p,tilt,azi){ const wi=widthInk(p,tilt); return {x,y,hw:wi.hw,tip:wi.tip,ink:wi.ink,tilt:wi.tilt,azi,p}; }
+  function drawDabs(arr){
+    if(!arr.length) return; const instData=new Float32Array(arr), nDab=instData.length/7;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,sbo); gl.viewport(0,0,W,H); gl.useProgram(P);
+    gl.uniform2f(loc.res,W,H); gl.uniform3f(loc.color,ink[0],ink[1],ink[2]);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,grainTex); gl.uniform1i(loc.grain,0); gl.uniform1f(loc.grainPx,grainPx);
+    gl.bindBuffer(gl.ARRAY_BUFFER,quad); gl.enableVertexAttribArray(loc.corner); gl.vertexAttribPointer(loc.corner,2,gl.FLOAT,false,0,0); gl.vertexAttribDivisor(loc.corner,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,bInst); gl.bufferData(gl.ARRAY_BUFFER,instData,gl.DYNAMIC_DRAW);
+    const st=28;
+    gl.enableVertexAttribArray(loc.center); gl.vertexAttribPointer(loc.center,2,gl.FLOAT,false,st,0); gl.vertexAttribDivisor(loc.center,1);
+    gl.enableVertexAttribArray(loc.rad); gl.vertexAttribPointer(loc.rad,1,gl.FLOAT,false,st,8); gl.vertexAttribDivisor(loc.rad,1);
+    gl.enableVertexAttribArray(loc.tip); gl.vertexAttribPointer(loc.tip,1,gl.FLOAT,false,st,12); gl.vertexAttribDivisor(loc.tip,1);
+    gl.enableVertexAttribArray(loc.ink); gl.vertexAttribPointer(loc.ink,1,gl.FLOAT,false,st,16); gl.vertexAttribDivisor(loc.ink,1);
+    gl.enableVertexAttribArray(loc.tilt); gl.vertexAttribPointer(loc.tilt,1,gl.FLOAT,false,st,20); gl.vertexAttribDivisor(loc.tilt,1);
+    gl.enableVertexAttribArray(loc.azi); gl.vertexAttribPointer(loc.azi,1,gl.FLOAT,false,st,24); gl.vertexAttribDivisor(loc.azi,1);
+    gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE,gl.ONE); gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,nDab);
+  }
+  function present(){
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H); gl.disable(gl.BLEND); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(BP); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sboTex); gl.uniform1i(loc.tex,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,bQuad); gl.enableVertexAttribArray(loc.bp); gl.vertexAttribPointer(loc.bp,2,gl.FLOAT,false,0,0);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  }
+  function smoothSegment(pts,i){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||pts[i+1];
+    const knot=(a,b)=>Math.max(1e-3, Math.pow((b.x-a.x)**2+(b.y-a.y)**2, .25));
+    const t0=0,t1=t0+knot(p0,p1),t2=t1+knot(p1,p2),t3=t2+knot(p2,p3);
+    const steps=Math.max(1,Math.ceil(Math.hypot(p2.x-p1.x,p2.y-p1.y)/3)), out=[];
+    for(let s=0;s<steps;s++){ const u=s/steps,t=t1+(t2-t1)*u, lx=(ax,bx,ta,tb)=>((tb-t)*ax+(t-ta)*bx)/(tb-ta);
+      const A1x=lx(p0.x,p1.x,t0,t1),A1y=lx(p0.y,p1.y,t0,t1),A2x=lx(p1.x,p2.x,t1,t2),A2y=lx(p1.y,p2.y,t1,t2),A3x=lx(p2.x,p3.x,t2,t3),A3y=lx(p2.y,p3.y,t2,t3);
+      const B1x=((t2-t)*A1x+(t-t0)*A2x)/(t2-t0),B1y=((t2-t)*A1y+(t-t0)*A2y)/(t2-t0),B2x=((t3-t)*A2x+(t-t1)*A3x)/(t3-t1),B2y=((t3-t)*A2y+(t-t1)*A3y)/(t3-t1);
+      out.push({x:((t2-t)*B1x+(t-t1)*B2x)/(t2-t1),y:((t2-t)*B1y+(t-t1)*B2y)/(t2-t1),hw:p1.hw+(p2.hw-p1.hw)*u,tip:p1.tip+(p2.tip-p1.tip)*u,ink:p1.ink+(p2.ink-p1.ink)*u,tilt:p1.tilt+(p2.tilt-p1.tilt)*u,azi:p1.azi});
+    }
+    return out;
+  }
+  function pushDab(a,b,st,inst){
+    const dx=b.x-a.x,dy=b.y-a.y,seg=Math.hypot(dx,dy); if(seg<1e-4) return; const ux=dx/seg,uy=dy/seg;
+    const cax=Math.cos(a.azi),say=Math.sin(a.azi),cbx=Math.cos(b.azi),sby=Math.sin(b.azi); let d=st.carry;
+    while(d<=seg){
+      const t=d/seg,r=a.hw+(b.hw-a.hw)*t,tip=a.tip+(b.tip-a.tip)*t,localInk=a.ink+(b.ink-a.ink)*t,tilt=a.tilt+(b.tilt-a.tilt)*t,azi=Math.atan2(say+(sby-say)*t,cax+(cbx-cax)*t);
+      if(st.smR===null){ st.smR=r; st.smTip=tip; st.smInk=localInk; }
+      const wideSp=Math.max(.2,st.smR*P0.DAB_STEP_RAD), tipSp=Math.max(.55*scale,st.smTip*P0.DAB_STEP_TIP), dense=clamp((tilt-.12)/.38,0,1);
+      const sp=wideSp+(Math.min(wideSp,tipSp)-wideSp)*dense, k=Math.min(1,sp/P0.SMOOTH_LEN_PX);
+      st.smR+=(r-st.smR)*k; st.smTip+=(tip-st.smTip)*k; st.smInk+=(localInk-st.smInk)*k;
+      inst.push(a.x+ux*d,a.y+uy*d,st.smR,st.smTip,st.smInk,tilt,azi); d+=sp;
+    }
+    st.carry=d-seg;
+  }
+  function append(points,inst){
+    const st=run.dab;
+    for(const p of points){ if(st.last) pushDab(st.last,p,st,inst); st.last=p; bbox(p); }
+  }
+  function bbox(p){ const pad=p.hw+8*scale, b=run.bbox; b.x0=Math.min(b.x0,p.x-pad); b.y0=Math.min(b.y0,p.y-pad); b.x1=Math.max(b.x1,p.x+pad); b.y1=Math.max(b.y1,p.y+pad); }
+  function renderInc(final=false){
+    if(!run||run.pts.length<2) return;
+    const inst=[], lastSeg=final?run.pts.length-2:run.pts.length-3;
+    while(run.nextSeg<=lastSeg){ append(smoothSegment(run.pts,run.nextSeg),inst); run.nextSeg++; }
+    if(final) append([run.pts[run.pts.length-1]],inst);
+    drawDabs(inst); present();
+  }
+  return {
+    ok:true,canvas,
+    begin(doc,color,x,y,p,tilt,azi){ resize(doc); setColor(color); clear();
+      const pt=point(x,y,p,tilt,azi); run={pts:[pt],nextSeg:0,dab:{last:pt,carry:0,smR:null,smTip:null,smInk:null},bbox:{x0:x,y0:y,x1:x,y1:y}};
+      bbox(pt); drawDabs([pt.x,pt.y,pt.hw,pt.tip,pt.ink,pt.tilt,pt.azi]); present(); return pt; },
+    add(x,y,p,tilt,azi){ if(!run) return null; const last=run.pts[run.pts.length-1]; if((x-last.x)**2+(y-last.y)**2<(scale*scale)) return null;
+      const pt=point(x,y,p,tilt,azi); run.pts.push(pt); renderInc(false); return pt; },
+    end(){ if(!run) return null; renderInc(true); const b=run.bbox; run=null; return b; },
+    clear, present
+  };
+})();
 /* ── 毛筆：一筆三段（起筆入鋒・行筆・收筆出鋒）、五墨、飛白、纖維暈染 ── */
 function brushStamp(ctx,X,Y,r,ang,alpha){
   const d=Math.ceil(r*2.8); if(d<1||alpha<=0) return;
@@ -632,17 +891,22 @@ let stroke = null; // {tool,pts,last,lastW,bbox,targetCtx}
 function sizeDocFactor(){ return S.doc ? S.doc.scale : 2; }
 S.sizeDoc = () => (S.sizes[stroke?stroke.tool:S.tool] ?? S.size) * sizeDocFactor();
 
-function strokeBegin(x,y,p,tilt,tool){
+function strokeBegin(x,y,p,tilt,tool,azi=0){
   tool = tool || S.tool;
   const d=S.doc, layer=d.layers[d.active], B=BRUSHES[tool];
   preCtx.clearRect(0,0,d.w,d.h); preCtx.drawImage(layer.canvas,0,0); // 復原快照
   let ctx;
-  if(B.layered){ strokeCtx.clearRect(0,0,d.w,d.h); ctx=strokeCtx; }
+  const gpuPencil=tool==='pencil' && GPencil.ok;
+  if(gpuPencil) ctx=null;
+  else if(B.layered){ strokeCtx.clearRect(0,0,d.w,d.h); ctx=strokeCtx; }
   else ctx = layer.ctx;
   if(B.erase){ ctx.globalCompositeOperation='destination-out'; }
-  stroke = { tool, ctx, last:{x,y,p,tilt}, sx:x, sy:y, lastW:null,
+  stroke = { tool, ctx, gpuPencil, last:{x,y,p,tilt,azi}, sx:x, sy:y, smP:p, smT:tilt, lastW:null,
     bbox:{x0:x,y0:y,x1:x,y1:y}, t0:performance.now(), young:true, pointer:null };
-  strokeStamp(x,y,p,tilt);
+  if(gpuPencil){
+    const pt=GPencil.begin(d,S.color,x,y,p,tilt,azi);
+    stroke.curW=pt.hw*2; bboxAdd(pt.x,pt.y,pt.hw+8*d.scale);
+  } else strokeStamp(x,y,p,tilt);
   S.dirty=true;
 }
 function bboxAdd(x,y,r){ const b=stroke.bbox;
@@ -677,10 +941,18 @@ function strokeStamp(x,y,p,tilt){
   }
   stroke.last={x,y,p,tilt};
 }
-function strokeMove(x,y,p,tilt,dtS,tx,ty){
+function strokeMove(x,y,p,tilt,dtS,tx,ty,azi=0){
   if(!stroke) return;
   // 平滑（係數調高＝更貼筆尖）
   stroke.sx += (x-stroke.sx)*.52; stroke.sy += (y-stroke.sy)*.52;
+  if(stroke.gpuPencil){
+    stroke.smP += (p-stroke.smP)*.18; stroke.smT += (tilt-stroke.smT)*.18;
+    const pt=GPencil.add(stroke.sx,stroke.sy,stroke.smP,stroke.smT,azi);
+    if(pt){ stroke.curW=pt.hw*2; bboxAdd(pt.x,pt.y,pt.hw+8*S.doc.scale); }
+    stroke.last={x:stroke.sx,y:stroke.sy,p:stroke.smP,tilt:stroke.smT,azi};
+    if(performance.now()-stroke.t0>260) stroke.young=false;
+    S.dirty=true; return;
+  }
   strokeStamp(stroke.sx,stroke.sy,p,tilt);
   if(performance.now()-stroke.t0>260) stroke.young=false;
   S.dirty=true;
@@ -692,9 +964,16 @@ function strokeEnd(commit=true){
   if(!commit){ // 取消：還原快照
     layer.ctx.save(); layer.ctx.globalCompositeOperation='copy';
     layer.ctx.drawImage(preCv,0,0); layer.ctx.restore();
+    if(stroke.gpuPencil) GPencil.clear();
     stroke=null; S.dirty=true; return;
   }
-  if(B.layered){
+  if(stroke.gpuPencil){
+    GPencil.end();
+    layer.ctx.save();
+    layer.ctx.globalCompositeOperation='source-over';
+    layer.ctx.drawImage(GPencil.canvas,0,0);
+    layer.ctx.restore();
+  } else if(B.layered){
     if(stroke.tool==='brush'){ finishBrushStroke(layer); }
     else {
       layer.ctx.save();
@@ -774,13 +1053,15 @@ function render(){
   }
   vctx.save(); vctx.beginPath(); vctx.rect(0,0,d.w,d.h); vctx.clip();
   vctx.drawImage(cacheBelow,0,0);
-  const L=d.layers[d.active];
-  if(L.visible){
-    vctx.globalAlpha=L.opacity; vctx.drawImage(L.canvas,0,0); vctx.globalAlpha=1;
-    if(stroke && BRUSHES[stroke.tool].layered){
-      const B=BRUSHES[stroke.tool];
-      vctx.save(); vctx.globalAlpha=(B.alpha||1)*L.opacity; vctx.globalCompositeOperation=B.blend||'source-over';
-      vctx.drawImage(strokeCv,0,0); vctx.restore();
+	  const L=d.layers[d.active];
+	  if(L.visible){
+	    vctx.globalAlpha=L.opacity; vctx.drawImage(L.canvas,0,0); vctx.globalAlpha=1;
+	    if(stroke && stroke.gpuPencil){
+	      vctx.save(); vctx.globalAlpha=L.opacity; vctx.drawImage(GPencil.canvas,0,0); vctx.restore();
+	    } else if(stroke && BRUSHES[stroke.tool].layered){
+	      const B=BRUSHES[stroke.tool];
+	      vctx.save(); vctx.globalAlpha=(B.alpha||1)*L.opacity; vctx.globalCompositeOperation=B.blend||'source-over';
+	      vctx.drawImage(strokeCv,0,0); vctx.restore();
     }
   }
   // 追筆尾巴：墨水立即接到筆尖，消除感知延遲（下一幀被真筆跡取代）
@@ -809,8 +1090,14 @@ function pressureOf(e){
 }
 function tiltOf(e){
   if(e.pointerType!=='pen') return 0;
-  return clamp(Math.hypot(e.tiltX||0,e.tiltY||0)/90,0,1);
+  if(e.altitudeAngle!=null){
+    const altDeg=e.altitudeAngle*180/Math.PI;
+    return clamp((50-altDeg)/(50-25),0,1);
+  }
+  const altDeg=90-Math.min(90,Math.hypot(e.tiltX||0,e.tiltY||0));
+  return clamp((50-altDeg)/(50-25),0,1);
 }
+function azimuthOf(e){ return e.pointerType==='pen' && e.azimuthAngle!=null ? e.azimuthAngle : 0; }
 
 cv.addEventListener('pointerdown', e=>{
   e.preventDefault();
@@ -840,11 +1127,11 @@ cv.addEventListener('pointerdown', e=>{
     }
     return;
   }
-  // pen / mouse
-  if(stroke) return;
-  drawingPID=e.pointerId; beginDrawingUI();
-  const p=toDoc(e); strokeBegin(p.x,p.y,pressureOf(e),tiltOf(e));
-},{passive:false});
+	  // pen / mouse
+	  if(stroke) return;
+	  drawingPID=e.pointerId; beginDrawingUI();
+	  const p=toDoc(e); strokeBegin(p.x,p.y,pressureOf(e),tiltOf(e),undefined,azimuthOf(e));
+	},{passive:false});
 
 cv.addEventListener('pointermove', e=>{
   e.preventDefault();
@@ -879,11 +1166,11 @@ cv.addEventListener('pointermove', e=>{
     stroke.evT=now; stroke.evX=pd.x; stroke.evY=pd.y;
   }
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-  const dtSub=dtMs/evs.length/1000;
-  for(const ev of evs){
-    const p=toDoc(ev);
-    strokeMove(p.x,p.y,pressureOf(ev),tiltOf(ev),dtSub,ev.tiltX||0,ev.tiltY||0);
-  }
+	  const dtSub=dtMs/evs.length/1000;
+	  for(const ev of evs){
+	    const p=toDoc(ev);
+	    strokeMove(p.x,p.y,pressureOf(ev),tiltOf(ev),dtSub,ev.tiltX||0,ev.tiltY||0,azimuthOf(ev));
+	  }
   // 追筆游標：優先用瀏覽器預測點，否則用最新原始點
   let cx=e;
   if(e.getPredictedEvents){ const pe=e.getPredictedEvents(); if(pe&&pe.length) cx=pe[pe.length-1]; }
@@ -1036,6 +1323,45 @@ $('#clearLayer').addEventListener('click',()=>{
 });
 
 /* ════════════════ 工具列 UI ════════════════ */
+const TOOL_META=[
+  {id:'pencil',name:'鉛筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M37 9c5-5 11-5 16 0l-3 13H40z" fill="#f7ead9"/><path d="M40 22h10l12 48-17 23-17-23z" fill="#ff6c55"/><path d="M32 32l8-10v63l-12-15z" fill="#ff886e"/><path d="M50 22l12 48-10 13-7-61z" fill="#e94c3f"/><path d="M37 9c5-5 11-5 16 0l-3 13H40z" fill="#fff"/><path d="M45 93l17-23H28z" fill="#2b2520"/></svg>`},
+  {id:'pen',name:'墨水筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M40 8l16 48-9 29H33l-9-29z" fill="#8d8d87"/><path d="M40 8l7 48-7 12-7-12z" fill="#b9bbb4"/><path d="M24 56h32l-4 13H28z" fill="#302f2b"/><circle cx="40" cy="53" r="5" fill="#33322f"/><path d="M28 69h24v25H28z" fill="#9d7a22"/><path d="M30 94h20" stroke="#44361b" stroke-width="4" stroke-linecap="round"/></svg>`},
+  {id:'brush',name:'毛筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M39 7c7 22 14 37 14 52 0 14-8 24-13 31-5-7-13-17-13-31C27 44 34 29 39 7z" fill="#a3a39d"/><path d="M40 8c-1 27-3 43-2 71" stroke="#75756f" stroke-width="1.2" opacity=".55"/><path d="M27 63h26l-2 14H29z" fill="#252421"/><path d="M31 77h18v17H31z" fill="#72579a"/></svg>`},
+  {id:'marker',name:'麥克筆',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M28 19h24l5 19-6 44H29l-6-44z" fill="#262724"/><path d="M30 60h20v30H30z" fill="#5d9aa1"/><path d="M31 19h18l4 18H27z" fill="#8b8d88"/><path d="M33 12c4-6 10-6 14 0v7H33z" fill="#9a9a95"/><path d="M24 38h32l-4 22H28z" fill="#1b1c1a"/></svg>`},
+  {id:'water',name:'水彩',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M40 12s19 25 19 44a19 19 0 0 1-38 0c0-19 19-44 19-44z" fill="#5cc1d5"/><path d="M31 47c2-12 9-23 9-23s11 18 11 32c0 8-5 13-12 13-8 0-12-5-12-12 0-3 2-7 4-10z" fill="#8bd5c2" opacity=".72"/><path d="M49 34c7 8 10 16 10 24 0 10-7 18-18 18" fill="none" stroke="#f0cd5a" stroke-width="12" stroke-linecap="round" opacity=".68"/></svg>`},
+  {id:'eraser',name:'橡皮擦',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M22 55l24-34c3-4 8-4 11 0l7 9c3 4 3 8 0 12L42 75z" fill="#f0a6ad"/><path d="M22 55l20 20-10 12H15c-5 0-8-5-5-9z" fill="#f6d9cd"/><path d="M41 75l23-33" stroke="#cf7f86" stroke-width="3" opacity=".5"/></svg>`},
+  {id:'smudge',name:'塗抹',art:`<svg class="tool-illus" viewBox="0 0 80 100" aria-hidden="true"><path d="M45 9c7 0 11 5 10 13L49 67c-1 8-8 15-16 15-9 0-15-7-13-16l8-42c2-10 8-15 17-15z" fill="#d8c5aa"/><path d="M30 74c10-2 21-2 31 4 5 3 5 10-1 12-14 5-33 2-43-6-4-3-3-8 2-9 3-.5 7-.3 11-1z" fill="#8b7b67" opacity=".82"/><path d="M35 20l-7 39" stroke="#ad967b" stroke-width="3" stroke-linecap="round" opacity=".5"/></svg>`}
+];
+const QUICK_SWATCH=['#061a3a','#124AF2','#3222F4','#3F7BD4','#7898D6','#B8C4DA','#B7AEB7'];
+function buildToolDock(){
+  const rail=$('#toolRail'); rail.innerHTML='';
+  TOOL_META.forEach(t=>{
+    const b=document.createElement('button');
+    b.className='tool-btn'; b.dataset.tool=t.id; b.title=t.name; b.setAttribute('aria-label',t.name);
+    b.innerHTML=`<span class="tool-art">${t.art}</span>`;
+    b.addEventListener('click',()=>setTool(t.id,b));
+    rail.appendChild(b);
+  });
+}
+function setTool(tool,btn=null){
+  S.tool=tool;
+  document.querySelectorAll('#toolRail [data-tool]').forEach(x=>{
+    const on=x.dataset.tool===tool; x.classList.toggle('on',on);
+    if(on){ x.classList.add('pop'); setTimeout(()=>x.classList.remove('pop'),420); if(!btn) x.scrollIntoView({block:'nearest',inline:'center'}); }
+  });
+  setSize(S.sizes[S.tool]);
+  $('#grades').classList.toggle('show', S.tool==='pencil');
+  closePanels();
+}
+function buildQuickColors(){
+  const box=$('#quickColors'); box.innerHTML='';
+  QUICK_SWATCH.forEach(c=>{
+    const b=document.createElement('button'); b.style.background=c; b.title=c; b.setAttribute('aria-label',c);
+    b.classList.toggle('on', c.toLowerCase()===S.color.toLowerCase());
+    b.addEventListener('click',()=>setColor(c));
+    box.appendChild(b);
+  });
+}
 const SWATCH = ['#26241F','#5C5347','#8A7B66','#B9AB91','#C25E40','#E08D5F','#E8B64C','#9A8C2E',
   '#5E7C4A','#3E6B5C','#3D7C8C','#3F5E8C','#5A4E8C','#8C4A6B','#B8485E','#D97C7C',
   '#1B3A4B','#2E2440','#6B3226','#403A2E','#7C8C99','#B5BfB2','#E3D7C3','#FBF8F1'];
@@ -1048,22 +1374,15 @@ function buildSwatches(){
     box.appendChild(b);
   });
 }
-function setColor(c){ S.color=c; $('#colorBtn span').style.background=c; $('#colorInput').value=c; buildSwatches(); }
+function setColor(c){ S.color=c; $('#colorBtn span').style.background=c; $('#colorInput').value=c; buildSwatches(); buildQuickColors(); }
 $('#colorInput').addEventListener('input',e=>setColor(e.target.value));
 function setSize(v){ S.size=+v; S.sizes[S.tool]=+v; $('#sizeRange').value=v;
   const d=clamp(v,2,30); $('#sizeBtn i').style.width=d+'px'; $('#sizeBtn i').style.height=d+'px';
   const pd=clamp(v,2,60); const pi=$('#sizePrev i'); pi.style.width=pd+'px'; pi.style.height=pd+'px'; }
 $('#sizeRange').addEventListener('input',e=>setSize(e.target.value));
 
-document.querySelectorAll('#dock [data-tool]').forEach(b=>{
-  b.addEventListener('click',()=>{
-    S.tool=b.dataset.tool;
-    document.querySelectorAll('#dock [data-tool]').forEach(x=>x.classList.toggle('on',x===b));
-    setSize(S.sizes[S.tool]); // 每個工具記憶自己的大小
-    $('#grades').classList.toggle('show', S.tool==='pencil');
-    closePanels();
-  });
-});
+$('#quickAddLayer').addEventListener('click',()=>$('#addLayer').click());
+$('#quickClearLayer').addEventListener('click',()=>$('#clearLayer').click());
 function buildGrades(){
   const box=$('#grades'); box.innerHTML='';
   for(const k of GRADE_ORDER){
@@ -1156,14 +1475,13 @@ $('#backBtn').addEventListener('click',showGallery);
 
 /* ════════════════ 啟動 ════════════════ */
 (async function init(){
-  await DB.open();
-  { const v=$('#ver'), vb=$('#verBadge'); if(v)v.textContent=APP_VERSION; if(vb)vb.textContent='Atelier '+APP_VERSION; }
-  resizeView();
-  setColor('#26241F'); setSize(S.sizes[S.tool]); buildGrades();
-  document.querySelector('#dock [data-tool="pen"]').classList.add('on');
-  await showGallery();
-  if(S.pencilMode) console.log('Pencil mode on');
-})();
+	  await DB.open();
+	  { const v=$('#ver'), vb=$('#verBadge'); if(v)v.textContent=APP_VERSION; if(vb)vb.textContent='Atelier '+APP_VERSION; }
+	  resizeView();
+	  buildToolDock(); setColor('#26241F'); buildGrades(); setTool(S.tool);
+	  await showGallery();
+	  if(S.pencilMode) console.log('Pencil mode on');
+	})();
 </script>
 </body>
 </html>
