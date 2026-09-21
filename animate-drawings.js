@@ -83,8 +83,8 @@
   }
 
   function disposeScene(){
-    const scene = state.scene;
-    if (scene && scene.rig) scene.rig.renderer.dispose();
+    const world = state.scene;
+    if (world) world.actors.forEach(actor => { if (actor.rig) actor.rig.renderer.dispose(); });
     state.scene = null;
     state.press = null;
   }
@@ -417,60 +417,174 @@
     return output;
   }
 
-  function buildScene(foreground,background,sourceType){
-    const sceneForeground=scaleBackground(foreground);
-    const trimmed=trimForeground(sceneForeground);
-    const analysis=analyseLines(trimmed.sprite);
+  // Split a drawing into separate characters. Marks close together (eyes, buttons)
+  // join their body; big separate groups become their own actor; small leftovers
+  // (a sun, some grass) stay painted on the paper.
+  function splitCharacters(source){
+    const W=source.width, H=source.height;
+    const cell=Math.max(W,H)/160;
+    const gw=Math.ceil(W/cell), gh=Math.ceil(H/cell);
+    const data=source.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data;
+    const ink=new Uint8Array(gw*gh);
+    for (let y=0;y<H;y++){
+      const row=((y/cell)|0)*gw;
+      for (let x=0;x<W;x++) if (data[(y*W+x)*4+3]>8) ink[row+((x/cell)|0)]=1;
+    }
+    const reach=Math.max(1,Math.round(Math.max(gw,gh)*.012));
+    const grown=new Uint8Array(gw*gh);
+    for (let i=0;i<ink.length;i++){
+      if (!ink[i]) continue;
+      const cx=i%gw, cy=(i/gw)|0;
+      for (let y=Math.max(0,cy-reach);y<=Math.min(gh-1,cy+reach);y++)
+        for (let x=Math.max(0,cx-reach);x<=Math.min(gw-1,cx+reach);x++) grown[y*gw+x]=1;
+    }
+    const label=new Int32Array(gw*gh).fill(-1);
+    const queue=new Int32Array(gw*gh);
+    const groups=[];
+    for (let start=0;start<grown.length;start++){
+      if (!grown[start] || label[start]>=0) continue;
+      const group={id:groups.length,area:0,minX:gw,minY:gh,maxX:-1,maxY:-1};
+      let head=0,tail=0;
+      queue[tail++]=start; label[start]=group.id;
+      while (head<tail){
+        const i=queue[head++], x=i%gw, y=(i/gw)|0;
+        if (ink[i]){
+          group.area++;
+          group.minX=Math.min(group.minX,x); group.maxX=Math.max(group.maxX,x);
+          group.minY=Math.min(group.minY,y); group.maxY=Math.max(group.maxY,y);
+        }
+        if (x>0 && grown[i-1] && label[i-1]<0){ label[i-1]=group.id; queue[tail++]=i-1; }
+        if (x<gw-1 && grown[i+1] && label[i+1]<0){ label[i+1]=group.id; queue[tail++]=i+1; }
+        if (y>0 && grown[i-gw] && label[i-gw]<0){ label[i-gw]=group.id; queue[tail++]=i-gw; }
+        if (y<gh-1 && grown[i+gw] && label[i+gw]<0){ label[i+gw]=group.id; queue[tail++]=i+gw; }
+      }
+      groups.push(group);
+    }
+    groups.sort((a,b)=>b.area-a.area);
+    const biggest=groups.length?groups[0].area:0;
+    const chosen=groups.filter(g=>g.area>=biggest*.18 && g.area>=24).slice(0,4);
+    if (chosen.length<2) return null;
+
+    const slot=new Int32Array(groups.length+1).fill(-1);
+    chosen.forEach((g,k)=>{
+      slot[g.id]=k;
+      const pad=4;
+      g.left=Math.max(0,Math.floor(g.minX*cell)-pad);
+      g.top=Math.max(0,Math.floor(g.minY*cell)-pad);
+      g.width=Math.min(W,Math.ceil((g.maxX+1)*cell)+pad)-g.left;
+      g.height=Math.min(H,Math.ceil((g.maxY+1)*cell)+pad)-g.top;
+      g.pixels=new ImageData(g.width,g.height);
+    });
+    const props=new ImageData(W,H);
+    for (let y=0;y<H;y++){
+      const row=((y/cell)|0)*gw;
+      for (let x=0;x<W;x++){
+        const i=(y*W+x)*4;
+        if (!data[i+3]) continue;
+        const id=label[row+((x/cell)|0)];
+        const k=id>=0?slot[id]:-1;
+        const g=k>=0?chosen[k]:null;
+        let out=props.data, o=i;
+        if (g && x>=g.left && y>=g.top && x<g.left+g.width && y<g.top+g.height){
+          out=g.pixels.data; o=((y-g.top)*g.width+(x-g.left))*4;
+        }
+        out[o]=data[i]; out[o+1]=data[i+1]; out[o+2]=data[i+2]; out[o+3]=data[i+3];
+      }
+    }
+    const propsCanvas=document.createElement('canvas');
+    propsCanvas.width=W; propsCanvas.height=H;
+    propsCanvas.getContext('2d').putImageData(props,0,0);
+    return {
+      props:propsCanvas,
+      actors:chosen.map(g=>{
+        const sprite=document.createElement('canvas');
+        sprite.width=g.width; sprite.height=g.height;
+        sprite.getContext('2d').putImageData(g.pixels,0,0);
+        return {sprite,x:g.left+g.width/2,y:g.top+g.height/2};
+      }),
+    };
+  }
+
+  // Actors inherit the world (size, background, chosen action) through their
+  // prototype and keep their own position, sprite, skeleton and moods.
+  function makeActor(world,sprite,x,y){
+    const analysis=analyseLines(sprite);
     // The skeleton gets the first say: two or more limbs means it's a character,
     // even when thin or faint lines made the connectivity test call it abstract.
-    let rig=buildRig(trimmed.sprite);
+    let rig=buildRig(sprite);
     if (rig && rig.leafCount>=2) analysis.kind='character';
     else if (rig && analysis.kind!=='character'){ rig.renderer.dispose(); rig=null; }
-    const sceneBackground=scaleBackground(background);
-    const scene={
-      width:sceneBackground.width,
-      height:sceneBackground.height,
-      background:sceneBackground,
-      sprite:trimmed.sprite,
+    const actor=Object.create(world);
+    const heading=Math.random()<.5?-1:1;
+    // Which way the drawing looks: a head left of the body means it faces left,
+    // so it gets mirrored the other way and never walks backwards.
+    const head=rig && rig.bones.find(bone=>bone.role==='head');
+    const facing=head && head.tip.x<rig.joints[0].x-rig.W*.05 ? -1 : 1;
+    return Object.assign(actor,{
+      sprite,
+      facing,
       kind:analysis.kind,
       rig,
       editing:false,
       popAt:-1e9,
-      sourceType,
-      action:'surprise',
       surpriseAction:'walk',
       surpriseAt:0,
-      x:sceneBackground.width*.5,
-      y:sceneBackground.height*.64,
-      vx:sceneBackground.width*.085,
-      vy:sceneBackground.height*.045,
-      direction:1,
+      x, y,
+      vx:heading*world.width*.085,
+      vy:world.height*.045,
+      direction:heading,
       target:null,
       seed:Math.random()*1000,
+      greetUntil:0,
+      parting:false,
+    });
+  }
+
+  function buildScene(foreground,background,sourceType){
+    const sceneForeground=scaleBackground(foreground);
+    const sceneBackground=scaleBackground(background);
+    const world={
+      width:sceneBackground.width,
+      height:sceneBackground.height,
+      background:sceneBackground,
+      sourceType,
+      action:'surprise',
+      actors:[],
+      hearts:[],
+      visitAt:0,
     };
-    state.scene=scene;
-    els.stage.width=scene.width;
-    els.stage.height=scene.height;
-    setSceneSize();
+    state.scene=world;
+    const split=splitCharacters(sceneForeground);
+    if (split){
+      sceneBackground.getContext('2d').drawImage(split.props,0,0);
+      world.actors=split.actors.map(a=>makeActor(world,a.sprite,a.x,a.y));
+      const tallest=Math.max(...world.actors.map(a=>a.sprite.height));
+      const widest=Math.max(...world.actors.map(a=>a.sprite.width));
+      const scale=Math.min(1.6,world.height*.46/tallest,world.width*.3/widest);
+      world.actors.forEach(actor=>sizeActor(actor,scale));
+    }else{
+      const trimmed=trimForeground(sceneForeground);
+      const actor=makeActor(world,trimmed.sprite,world.width*.5,world.height*.64);
+      const widthLimit=actor.kind==='character'?.34:.52;
+      const heightLimit=actor.kind==='character'?.48:.58;
+      sizeActor(actor,Math.min(world.width*widthLimit/actor.sprite.width,world.height*heightLimit/actor.sprite.height,1.8));
+      world.actors=[actor];
+    }
+    els.stage.width=world.width;
+    els.stage.height=world.height;
     updateActionButtons();
     setView('play');
     startAnimation();
   }
 
-  function setSceneSize(){
-    const scene=state.scene;
-    if (!scene) return;
-    const widthLimit=scene.kind==='character'?.34:.52;
-    const heightLimit=scene.kind==='character'?.48:.58;
-    const scale=Math.min(scene.width*widthLimit/scene.sprite.width,scene.height*heightLimit/scene.sprite.height,1.8);
-    scene.drawWidth=Math.max(28,scene.sprite.width*scale);
-    scene.drawHeight=Math.max(28,scene.sprite.height*scale);
-    if (scene.rig) window.AtelierRig.setScale(scene.rig,scene.drawWidth/scene.sprite.width);
-    scene.x=Math.max(scene.drawWidth*.55,Math.min(scene.width-scene.drawWidth*.55,scene.x));
-    scene.y=Math.max(scene.drawHeight*.55,Math.min(scene.height-scene.drawHeight*.55,scene.y));
+  function sizeActor(actor,scale){
+    actor.drawWidth=Math.max(28,actor.sprite.width*scale);
+    actor.drawHeight=Math.max(28,actor.sprite.height*scale);
+    if (actor.rig) window.AtelierRig.setScale(actor.rig,actor.drawWidth/actor.sprite.width);
+    actor.x=Math.max(actor.drawWidth*.55,Math.min(actor.width-actor.drawWidth*.55,actor.x));
+    actor.y=Math.max(actor.drawHeight*.55,Math.min(actor.height-actor.drawHeight*.55,actor.y));
   }
 
-  // Auto rig; any failure quietly falls back to whole-drawing motion.
   function buildRig(sprite){
     if (!window.AtelierRig) return null;
     try{
@@ -494,12 +608,14 @@
   }
 
   function selectAction(action){
-    const scene=state.scene;
-    if (!scene) return;
-    scene.action=action;
-    scene.target=null;
-    scene.surpriseAt=0;
-    if (action==='walk' || action==='hop') scene.vx=(scene.direction||1)*scene.width*.085;
+    const world=state.scene;
+    if (!world) return;
+    world.action=action;
+    world.actors.forEach(actor=>{
+      actor.target=null;
+      actor.surpriseAt=0;
+      if (action==='walk' || action==='hop') actor.vx=(actor.direction||1)*world.width*.085;
+    });
     updateActionButtons();
   }
 
@@ -596,13 +712,16 @@
     }else if (action==='float'){
       bob=Math.sin(phase*.55)*scene.drawHeight*.035*amount;
       rotation=Math.sin(phase*.36)*.07*amount;
+    }else if (action==='wave'){
+      bob=Math.abs(Math.sin(time*.009))*scene.drawHeight*.03*amount;
+      rotation=(scene.rig?0:Math.sin(time*.012)*.06)*amount;
     }
     if (!scene.editing) bob+=popOffset(scene,time);
     drawShadow(context,scene,action,time);
     context.save();
     context.translate(scene.x,scene.y-bob);
     context.rotate(rotation);
-    context.scale(scene.direction*scaleX,scaleY);
+    context.scale(scene.direction*scene.facing*scaleX,scaleY);
     if (scene.rig){
       const rig=scene.rig;
       const angles=scene.editing ? new Float32Array(rig.bones.length) : window.AtelierRig.pose(rig,action,time,reduceMotion?.35:1);
@@ -618,12 +737,12 @@
 
   function jointToStage(scene,joint){
     const s=scene.drawWidth/scene.sprite.width;
-    return {x:scene.x+scene.direction*(joint.x-scene.sprite.width/2)*s, y:scene.y+(joint.y-scene.sprite.height/2)*s};
+    return {x:scene.x+scene.direction*scene.facing*(joint.x-scene.sprite.width/2)*s, y:scene.y+(joint.y-scene.sprite.height/2)*s};
   }
 
   function stageToSprite(scene,point){
     const s=scene.drawWidth/scene.sprite.width;
-    return {x:(point.x-scene.x)*scene.direction/s+scene.sprite.width/2, y:(point.y-scene.y)/s+scene.sprite.height/2};
+    return {x:(point.x-scene.x)*scene.direction*scene.facing/s+scene.sprite.width/2, y:(point.y-scene.y)/s+scene.sprite.height/2};
   }
 
   function drawJoints(context,scene){
@@ -714,20 +833,98 @@
     context.restore();
   }
 
+  // Characters notice each other: they meet and wave with a floating heart,
+  // politely bump instead of walking through each other, and visit friends.
+  function interact(world,time){
+    const actors=world.actors;
+    for (let i=0;i<actors.length;i++) for (let j=i+1;j<actors.length;j++){
+      const a=actors[i], b=actors[j];
+      if (a.editing || b.editing) continue;
+      const dx=b.x-a.x, dy=b.y-a.y;
+      const reach=(a.drawWidth+b.drawWidth)*.5;
+      const level=Math.abs(dy)<(a.drawHeight+b.drawHeight)*.35;
+      if (level && Math.abs(dx)<reach*1.15 && world.action!=='dance' &&
+          time>a.greetUntil+5000 && time>b.greetUntil+5000){
+        a.greetUntil=b.greetUntil=time+1700;
+        a.direction=dx>=0?1:-1; b.direction=-a.direction;
+        a.vx=a.direction*.5; b.vx=b.direction*.5;
+        a.target=b.target=null;
+        a.parting=b.parting=true;
+        world.hearts.push({x:(a.x+b.x)/2,y:Math.min(a.y-a.drawHeight*.5,b.y-b.drawHeight*.5),born:time});
+        chime();
+      }
+      const overlap=reach*.62-Math.abs(dx);
+      if (level && overlap>0){
+        const push=Math.min(overlap*.5,world.width*.004)*(dx>=0?1:-1);
+        a.x-=push; b.x+=push;
+      }
+    }
+    for (const actor of actors){
+      if (actor.parting && time>=actor.greetUntil){
+        actor.parting=false;
+        actor.vx=-actor.direction*world.width*.085;   // wave goodbye, walk on
+      }
+    }
+    if (world.action==='dance' && actors.length>1){
+      const center=actors.reduce((sum,a)=>sum+a.x,0)/actors.length;
+      actors.forEach(a=>{ a.vx=(center>=a.x?1:-1)*.5; });   // dance facing each other
+    }
+    if (actors.length>1 && time>world.visitAt){
+      world.visitAt=time+4500+Math.random()*4000;
+      if (world.visitAt>0 && world.action!=='dance'){
+        const visitor=actors[Math.floor(Math.random()*actors.length)];
+        const friends=actors.filter(a=>a!==visitor);
+        const friend=friends[Math.floor(Math.random()*friends.length)];
+        if (!visitor.editing && time>visitor.greetUntil) visitor.target={x:friend.x,y:friend.y};
+      }
+    }
+  }
+
+  function drawHearts(context,world,time){
+    world.hearts=world.hearts.filter(h=>time-h.born<1600);
+    for (const h of world.hearts){
+      const t=(time-h.born)/1600;
+      const s=world.width*.03*(.6+t*.6);
+      context.save();
+      context.globalAlpha=Math.min(1,(1-t)*1.6);
+      context.translate(h.x+Math.sin(t*7)*s*.3,h.y-t*world.height*.09);
+      context.fillStyle='#ec6a74';
+      context.beginPath();
+      context.moveTo(0,s*.35);
+      context.bezierCurveTo(-s*.1,s*.2,-s*.5,s*.15,-s*.5,-s*.1);
+      context.bezierCurveTo(-s*.5,-s*.4,-s*.1,-s*.45,0,-s*.2);
+      context.bezierCurveTo(s*.1,-s*.45,s*.5,-s*.4,s*.5,-s*.1);
+      context.bezierCurveTo(s*.5,s*.15,s*.1,s*.2,0,s*.35);
+      context.fill();
+      context.restore();
+    }
+  }
+
+  function actorAction(actor,time){
+    return time<actor.greetUntil ? 'wave' : activeAction(actor,time);
+  }
+
   function drawFrame(time){
-    const scene=state.scene;
-    if (!scene || state.view!=='play') return;
+    const world=state.scene;
+    if (!world || state.view!=='play') return;
     const delta=state.lastFrame?Math.min(.05,(time-state.lastFrame)/1000):0;
     state.lastFrame=time;
-    const action=activeAction(scene,time);
-    updateScene(scene,action,time,delta);
+    for (const actor of world.actors){
+      actor.current=actorAction(actor,time);
+      updateScene(actor,actor.current,time,delta);
+    }
+    interact(world,time);
     stageContext.setTransform(1,0,0,1,0,0);
     stageContext.globalAlpha=1;
     stageContext.filter='none';
-    stageContext.drawImage(scene.background,0,0,scene.width,scene.height);
-    if (scene.kind==='character') drawCharacter(stageContext,scene,action,time);
-    else drawAbstract(stageContext,scene,action,time);
-    drawSparkles(stageContext,scene,time);
+    stageContext.drawImage(world.background,0,0,world.width,world.height);
+    const byDepth=[...world.actors].sort((a,b)=>(a.y+a.drawHeight/2)-(b.y+b.drawHeight/2));
+    for (const actor of byDepth){
+      if (actor.kind==='character') drawCharacter(stageContext,actor,actor.current,time);
+      else drawAbstract(stageContext,actor,actor.current,time);
+    }
+    drawHearts(stageContext,world,time);
+    world.actors.forEach(actor=>drawSparkles(stageContext,actor,time));
     state.frame=requestAnimationFrame(drawFrame);
   }
 
@@ -777,7 +974,7 @@
     scene.editTimer=setTimeout(()=>setEditing(scene,false),1600);
   }
 
-  function boing(){
+  function tone(from,peak,to,length,volume=.2,type='sine'){
     try{
       const Audio=window.AudioContext||window.webkitAudioContext;
       if (!Audio) return;
@@ -785,73 +982,94 @@
       const ctx=state.audio, t=ctx.currentTime;
       if (ctx.state==='suspended') ctx.resume();
       const osc=ctx.createOscillator(), gain=ctx.createGain();
-      osc.type='sine';
-      osc.frequency.setValueAtTime(300,t);
-      osc.frequency.exponentialRampToValueAtTime(760,t+.12);
-      osc.frequency.exponentialRampToValueAtTime(430,t+.3);
+      osc.type=type;
+      osc.frequency.setValueAtTime(from,t);
+      osc.frequency.exponentialRampToValueAtTime(peak,t+length*.35);
+      osc.frequency.exponentialRampToValueAtTime(to,t+length*.85);
       gain.gain.setValueAtTime(.0001,t);
-      gain.gain.exponentialRampToValueAtTime(.2,t+.02);
-      gain.gain.exponentialRampToValueAtTime(.0001,t+.34);
+      gain.gain.exponentialRampToValueAtTime(volume,t+.02);
+      gain.gain.exponentialRampToValueAtTime(.0001,t+length);
       osc.connect(gain).connect(ctx.destination);
-      osc.start(t); osc.stop(t+.36);
+      osc.start(t); osc.stop(t+length+.02);
     }catch(error){ /* sound is optional */ }
   }
 
+  function boing(){ tone(300,760,430,.34); }
+  function chime(){ tone(880,1320,1180,.28,.12,'triangle'); setTimeout(()=>tone(1180,1560,1400,.3,.1,'triangle'),140); }
+
+  function actorAt(point){
+    const world=state.scene;
+    const front=[...world.actors].sort((a,b)=>(b.y+b.drawHeight/2)-(a.y+a.drawHeight/2));
+    return front.find(actor=>onCharacter(actor,point)) || null;
+  }
+
   function stageDown(event){
-    const scene=state.scene;
-    if (!scene) return;
+    const world=state.scene;
+    if (!world) return;
     const point=stagePoint(event);
     els.stage.setPointerCapture(event.pointerId);
-    const press={id:event.pointerId,start:point,moved:false,joint:-1,timer:0};
+    const press={id:event.pointerId,start:point,moved:false,joint:-1,timer:0,actor:null};
     state.press=press;
-    if (scene.editing){
-      press.joint=nearestJoint(scene,point);
-      if (press.joint>0) clearTimeout(scene.editTimer);
+    const editing=world.actors.find(actor=>actor.editing);
+    if (editing){
+      press.actor=editing;
+      press.joint=nearestJoint(editing,point);
+      if (press.joint>0) clearTimeout(editing.editTimer);
       return;
     }
-    if (scene.rig && onCharacter(scene,point)){
-      // Press and hold the drawing to reveal its joints.
+    const actor=actorAt(point);
+    press.actor=actor;
+    if (actor && actor.rig){
+      // Press and hold a character to reveal its joints.
       press.timer=setTimeout(()=>{
         if (state.press!==press || press.moved) return;
-        setEditing(scene,true);
-        press.joint=nearestJoint(scene,press.start);
+        setEditing(actor,true);
+        press.joint=nearestJoint(actor,press.start);
         press.held=true;
       },480);
     }
   }
 
   function stageMove(event){
-    const scene=state.scene, press=state.press;
-    if (!scene || !press || press.id!==event.pointerId) return;
+    const press=state.press;
+    if (!state.scene || !press || press.id!==event.pointerId) return;
     const point=stagePoint(event);
     if (Math.hypot(point.x-press.start.x,point.y-press.start.y)>12*stageUnit()) press.moved=true;
-    if (scene.editing && press.joint>0){
-      const local=stageToSprite(scene,point);
-      window.AtelierRig.moveJoint(scene.rig,press.joint,local.x,local.y);
+    const actor=press.actor;
+    if (actor && actor.editing && press.joint>0){
+      const local=stageToSprite(actor,point);
+      window.AtelierRig.moveJoint(actor.rig,press.joint,local.x,local.y);
     }
   }
 
   function stageUp(event){
-    const scene=state.scene, press=state.press;
-    if (!scene || !press || press.id!==event.pointerId) return;
+    const world=state.scene, press=state.press;
+    if (!world || !press || press.id!==event.pointerId) return;
     clearTimeout(press.timer);
     state.press=null;
     const point=stagePoint(event);
-    if (scene.editing){
-      if (press.joint>0 && press.moved){ window.AtelierRig.refresh(scene.rig); scheduleEditExit(scene); }
-      else if (press.held) scheduleEditExit(scene);
-      else if (press.joint<0) setEditing(scene,false);
-      else scheduleEditExit(scene);
+    const actor=press.actor;
+    if (actor && actor.editing){
+      if (press.joint>0 && press.moved){ window.AtelierRig.refresh(actor.rig); scheduleEditExit(actor); }
+      else if (press.held) scheduleEditExit(actor);
+      else if (press.joint<0) setEditing(actor,false);
+      else scheduleEditExit(actor);
       return;
     }
     if (press.moved) return;
-    if (onCharacter(scene,point)){
-      scene.popAt=performance.now();
+    const now=performance.now();
+    if (actor){
+      // One hops, and its friends hop along right after.
+      actor.popAt=now;
       boing();
+      world.actors.filter(other=>other!==actor).forEach((other,index)=>{ other.popAt=now+200+index*130; });
       return;
     }
-    if (scene.action==='dance') selectAction('walk');
-    scene.target=point;
+    if (world.action==='dance') selectAction('walk');
+    const spread=world.actors.reduce((sum,a)=>sum+a.drawWidth,0)/world.actors.length*.9;
+    world.actors.forEach((a,index)=>{
+      a.target={x:point.x+(index-(world.actors.length-1)/2)*spread,y:point.y};
+    });
   }
 
   openButton.addEventListener('click',openLab);

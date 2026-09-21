@@ -614,6 +614,14 @@
           else a = Math.sin(beat * 0.8) * 0.06;
           break;
         }
+        case 'wave': {
+          // Greeting a friend: arms up and waving, a happy head tilt, tail wag.
+          const hi = time * 0.013;
+          if (b.role === 'arm') a = lower ? Math.sin(hi + ph) * 0.45 : raise * (0.95 + Math.sin(hi * 0.5 + ph) * 0.15);
+          else if (b.role === 'head') a = Math.sin(time * 0.005) * 0.12;
+          else if (b.role === 'tail') a = Math.sin(hi) * 0.4;
+          break;
+        }
         case 'float': {
           const drift = time * 0.0022;
           if (b.role === 'trunk') a = Math.sin(drift + ph) * 0.03;
