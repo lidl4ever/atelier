@@ -12,7 +12,7 @@
 (() => {
   const GRID = 120;          // mask resolution along the long side
   const PAD = 4;             // empty cells around the drawing
-  const RENDER_MAX = 1100;   // max side of the skinned output canvas
+  const RENDER_MAX = 2048;   // max side of the skinned output canvas
 
   const N8 = (w) => [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1];
 
@@ -108,7 +108,7 @@
     for (let y = 0; y < H; y++){
       const gy = ((y / cell) | 0) + PAD;
       for (let x = 0; x < W; x++){
-        if (px[(y * W + x) * 4 + 3] > 40) ink[gy * w + ((x / cell) | 0) + PAD] = 1;
+        if (px[(y * W + x) * 4 + 3] > 8) ink[gy * w + ((x / cell) | 0) + PAD] = 1;
       }
     }
 
@@ -299,11 +299,13 @@
     const rig = {
       W, H, cell, w, h, mask, dt, skel, label, joints, bones, rootJoint:0, bodyCells,
       limbCount: bones.length - 1,
+      leafCount: segments.filter(seg => seg.leaf && seg.pixels.length).length,
     };
     classify(rig);
     computeWeights(rig);
     buildMesh(rig);
-    rig.renderer = makeRenderer(rig, sprite);
+    rig.sprite = sprite;
+    rig.renderer = makeRenderer(rig, 1);
     if (!rig.renderer) return null;
     return rig;
   }
@@ -483,9 +485,34 @@
     return M;
   }
 
-  function makeRenderer(rig, sprite){
+  // Shrink in halving steps so thin pencil lines survive; one big jump drops them.
+  function downscale(source, k){
+    const tw = Math.max(1, Math.round(source.width * k)), th = Math.max(1, Math.round(source.height * k));
+    let cur = source;
+    while (cur.width / 2 >= tw && cur.height / 2 >= th){
+      const half = document.createElement('canvas');
+      half.width = Math.ceil(cur.width / 2); half.height = Math.ceil(cur.height / 2);
+      const c = half.getContext('2d');
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(cur, 0, 0, half.width, half.height);
+      cur = half;
+    }
+    if (cur.width === tw && cur.height === th) return cur;
+    const out = document.createElement('canvas');
+    out.width = tw; out.height = th;
+    const c = out.getContext('2d');
+    c.imageSmoothingQuality = 'high';
+    c.drawImage(cur, 0, 0, tw, th);
+    return out;
+  }
+
+  // Render at the on-screen scale: the texture is pre-shrunk to match, so the GPU
+  // samples it about 1:1 (no mipmaps in WebGL1 for odd sizes, so minifying there aliases).
+  function makeRenderer(rig, scale){
+    const sprite = rig.sprite;
     const pad = Math.max(rig.W, rig.H) * 0.45;
-    const k = Math.min(1, RENDER_MAX / (Math.max(rig.W, rig.H) + pad * 2));
+    const k = Math.min(1, scale, RENDER_MAX / (Math.max(rig.W, rig.H) + pad * 2));
+    const texture = k < 0.98 ? downscale(sprite, k) : sprite;
     const canvas = document.createElement('canvas');
     canvas.width = Math.round((rig.W + pad * 2) * k);
     canvas.height = Math.round((rig.H + pad * 2) * k);
@@ -511,7 +538,7 @@
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sprite);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -539,7 +566,7 @@
     gl.viewport(0, 0, canvas.width, canvas.height);
 
     return {
-      canvas, pad,
+      canvas, pad, scale:k,
       draw(){
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -601,6 +628,17 @@
     return angles;
   }
 
+  // Match the renderer to how big the drawing is on screen (in stage pixels per sprite pixel).
+  function setScale(rig, scale){
+    const want = Math.min(1, scale);
+    if (Math.abs(want - rig.renderer.scale) / rig.renderer.scale < 0.15) return true;
+    const next = makeRenderer(rig, want);
+    if (!next) return false;
+    rig.renderer.dispose();
+    rig.renderer = next;
+    return true;
+  }
+
   function render(rig, angles){
     skin(rig, angles);
     rig.renderer.draw();
@@ -624,5 +662,5 @@
     classify(rig);
   }
 
-  window.AtelierRig = {build, pose, render, maskAt, moveJoint, refresh};
+  window.AtelierRig = {build, pose, render, setScale, maskAt, moveJoint, refresh};
 })();

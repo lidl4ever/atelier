@@ -381,7 +381,7 @@
     const filled=new Uint8Array(size*size);
     let total=0;
     for (let i=0; i<filled.length; i++){
-      if (data[i*4+3]>42){ filled[i]=1; total++; }
+      if (data[i*4+3]>12){ filled[i]=1; total++; }
     }
     const seen=new Uint8Array(filled.length);
     const queue=new Int32Array(filled.length);
@@ -421,7 +421,11 @@
     const sceneForeground=scaleBackground(foreground);
     const trimmed=trimForeground(sceneForeground);
     const analysis=analyseLines(trimmed.sprite);
-    const rig=analysis.kind==='character' ? buildRig(trimmed.sprite) : null;
+    // The skeleton gets the first say: two or more limbs means it's a character,
+    // even when thin or faint lines made the connectivity test call it abstract.
+    let rig=buildRig(trimmed.sprite);
+    if (rig && rig.leafCount>=2) analysis.kind='character';
+    else if (rig && analysis.kind!=='character'){ rig.renderer.dispose(); rig=null; }
     const sceneBackground=scaleBackground(background);
     const scene={
       width:sceneBackground.width,
@@ -461,6 +465,7 @@
     const scale=Math.min(scene.width*widthLimit/scene.sprite.width,scene.height*heightLimit/scene.sprite.height,1.8);
     scene.drawWidth=Math.max(28,scene.sprite.width*scale);
     scene.drawHeight=Math.max(28,scene.sprite.height*scale);
+    if (scene.rig) window.AtelierRig.setScale(scene.rig,scene.drawWidth/scene.sprite.width);
     scene.x=Math.max(scene.drawWidth*.55,Math.min(scene.width-scene.drawWidth*.55,scene.x));
     scene.y=Math.max(scene.drawHeight*.55,Math.min(scene.height-scene.drawHeight*.55,scene.y));
   }
@@ -660,30 +665,32 @@
     return rect.width ? els.stage.width/rect.width : 1;
   }
 
+  // Thin overlapping strips with a smooth wave: neighbours differ by a fraction of a
+  // pixel, so lines bend like cloth instead of breaking into steps.
   function drawAbstract(context,scene,action,time){
     const phase=time*.004+scene.seed;
     const amount=reduceMotion?.2:1;
-    const ribbons=10;
+    const strips=Math.max(24,Math.min(90,Math.round(scene.drawWidth/6)));
+    const sourceWidth=scene.sprite.width/strips;
+    const stripWidth=scene.drawWidth/strips;
     const pop=popOffset(scene,time);
-    const sourceWidth=scene.sprite.width/ribbons;
-    const ribbonWidth=scene.drawWidth/ribbons;
-    let rotation=0;
-    if (action==='dance') rotation=Math.sin(phase*.8)*.09*amount;
+    const rotation=action==='dance'?Math.sin(phase*.8)*.09*amount:0;
+    const waveHeight=scene.drawHeight*(action==='dance'?.065:.032)*amount;
     drawShadow(context,scene,action,time);
     context.save();
     context.translate(scene.x,scene.y-pop);
     context.rotate(rotation);
-    for (let i=0;i<ribbons;i++){
-      const wave=Math.sin(phase*1.25+i*.72)*scene.drawHeight*(action==='dance'?.065:.032)*amount;
-      const sway=Math.cos(phase*.83+i*.48)*scene.drawWidth*.022*amount;
-      const stretch=1+Math.sin(phase*.9+i*.55)*.035*amount;
+    for (let i=0;i<strips;i++){
+      const u=(i+.5)/strips;
+      const wave=Math.sin(phase*1.25+u*7.2)*waveHeight;
+      const sway=Math.cos(phase*.83+u*4.8)*scene.drawWidth*.022*amount;
+      const stretch=1+Math.sin(phase*.9+u*5.5)*.035*amount;
       context.drawImage(
         scene.sprite,
-        i*sourceWidth,0,sourceWidth+.6,scene.sprite.height,
-        -scene.drawWidth/2+i*ribbonWidth+sway,-scene.drawHeight*stretch/2+wave,
-        ribbonWidth+1.4,scene.drawHeight*stretch
+        i*sourceWidth,0,sourceWidth+1,scene.sprite.height,
+        -scene.drawWidth/2+i*stripWidth+sway,-scene.drawHeight*stretch/2+wave,
+        stripWidth+1,scene.drawHeight*stretch
       );
-      if (action==='surprise' && i%3===0) context.globalAlpha=.92;
     }
     context.restore();
   }
