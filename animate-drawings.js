@@ -1,11 +1,11 @@
 'use strict';
 
 /*
- * Atelier Lab MVP
+ * Atelier Lab
  * - Camera images are processed locally; no image leaves the device.
  * - A lightweight matte separates marks from paper.
- * - Connected-line analysis chooses character or imagination motion.
- * - The mode stays user-correctable because abstract drawings are intentional.
+ * - Characters get an automatic skeleton (drawing-rig.js); press and hold to drag joints.
+ * - Anything the rig can't read falls back to whole-drawing or ribbon motion, never an error.
  */
 (() => {
   const lab = document.querySelector('#magicLab');
@@ -27,8 +27,6 @@
     shutter: document.querySelector('#magicShutter'),
     file: document.querySelector('#magicFile'),
     stage: document.querySelector('#magicStage'),
-    mode: document.querySelector('#magicMode'),
-    playHint: document.querySelector('#magicPlayHint'),
   };
   const views = {
     source: els.source,
@@ -45,6 +43,8 @@
     lastFrame: 0,
     scene: null,
     previousFocus: null,
+    press: null,
+    audio: null,
   };
 
   function setView(name){
@@ -78,14 +78,21 @@
     stopAnimation();
     lab.classList.remove('is-open');
     lab.setAttribute('aria-hidden','true');
-    state.scene = null;
+    disposeScene();
     if (state.previousFocus && document.contains(state.previousFocus)) state.previousFocus.focus();
+  }
+
+  function disposeScene(){
+    const scene = state.scene;
+    if (scene && scene.rig) scene.rig.renderer.dispose();
+    state.scene = null;
+    state.press = null;
   }
 
   function goBack(){
     stopCamera();
     stopAnimation();
-    state.scene = null;
+    disposeScene();
     clearError();
     setView('source');
   }
@@ -414,6 +421,7 @@
     const sceneForeground=scaleBackground(foreground);
     const trimmed=trimForeground(sceneForeground);
     const analysis=analyseLines(trimmed.sprite);
+    const rig=analysis.kind==='character' ? buildRig(trimmed.sprite) : null;
     const sceneBackground=scaleBackground(background);
     const scene={
       width:sceneBackground.width,
@@ -421,6 +429,9 @@
       background:sceneBackground,
       sprite:trimmed.sprite,
       kind:analysis.kind,
+      rig,
+      editing:false,
+      popAt:-1e9,
       sourceType,
       action:'surprise',
       surpriseAction:'walk',
@@ -437,9 +448,7 @@
     els.stage.width=scene.width;
     els.stage.height=scene.height;
     setSceneSize();
-    updateModeLabel();
     updateActionButtons();
-    els.playHint.textContent=scene.kind==='character' ? '點紙面，讓它往那裡移動' : '抽象也不會失敗：線條會變成一種新的生物';
     setView('play');
     startAnimation();
   }
@@ -456,21 +465,17 @@
     scene.y=Math.max(scene.drawHeight*.55,Math.min(scene.height-scene.drawHeight*.55,scene.y));
   }
 
-  function updateModeLabel(){
-    const scene=state.scene;
-    if (!scene) return;
-    els.mode.textContent=scene.kind==='character' ? '線條判斷：角色模式' : '線條判斷：想像模式';
-    els.mode.setAttribute('aria-label', scene.kind==='character' ? '目前是角色模式，點擊切換成想像模式' : '目前是想像模式，點擊切換成角色模式');
-  }
-
-  function toggleMode(){
-    const scene=state.scene;
-    if (!scene) return;
-    scene.kind=scene.kind==='character'?'abstract':'character';
-    scene.target=null;
-    setSceneSize();
-    updateModeLabel();
-    els.playHint.textContent=scene.kind==='character' ? '角色模式會把整幅畫當成一個小生命' : '想像模式會讓分散、抽象的線條各自起舞';
+  // Auto rig; any failure quietly falls back to whole-drawing motion.
+  function buildRig(sprite){
+    if (!window.AtelierRig) return null;
+    try{
+      const rig=window.AtelierRig.build(sprite);
+      if (rig && rig.limbCount>0) return rig;
+      if (rig) rig.renderer.dispose();
+    }catch(error){
+      console.warn('Atelier rig failed', error);
+    }
+    return null;
   }
 
   function updateActionButtons(){
@@ -557,48 +562,116 @@
     context.restore();
   }
 
+  function popOffset(scene,time){
+    const t=(time-scene.popAt)/620;
+    return t>=0 && t<1 ? Math.sin(Math.PI*t)*scene.drawHeight*.22 : 0;
+  }
+
   function drawCharacter(context,scene,action,time){
     const phase=time*.006+scene.seed;
     const amount=reduceMotion?.24:1;
+    const squash=scene.rig?.5:1;
     let bob=0,rotation=0,scaleX=1,scaleY=1;
-    if (action==='walk'){
+    if (scene.editing){
+      // Rest pose so the joints line up with the drawing.
+    }else if (action==='walk'){
       bob=Math.abs(Math.sin(phase*1.35))*scene.drawHeight*.022*amount;
       rotation=Math.sin(phase*.68)*.025*amount;
-      scaleX=1+Math.sin(phase*1.35)*.018*amount;
-      scaleY=1-Math.sin(phase*1.35)*.018*amount;
+      scaleX=1+Math.sin(phase*1.35)*.018*amount*squash;
+      scaleY=1-Math.sin(phase*1.35)*.018*amount*squash;
     }else if (action==='hop'){
       rotation=Math.sin(phase*.7)*.045*amount;
-      scaleX=1+Math.sin(phase)*.045*amount;
-      scaleY=1-Math.sin(phase)*.045*amount;
+      scaleX=1+Math.sin(phase)*.045*amount*squash;
+      scaleY=1-Math.sin(phase)*.045*amount*squash;
     }else if (action==='dance'){
       bob=Math.abs(Math.sin(phase*1.6))*scene.drawHeight*.045*amount;
-      rotation=Math.sin(phase*.95)*.12*amount;
-      scaleX=1+Math.sin(phase*1.9)*.055*amount;
-      scaleY=1-Math.sin(phase*1.9)*.035*amount;
+      rotation=Math.sin(phase*.95)*.12*amount*squash;
+      scaleX=1+Math.sin(phase*1.9)*.055*amount*squash;
+      scaleY=1-Math.sin(phase*1.9)*.035*amount*squash;
     }else if (action==='float'){
       bob=Math.sin(phase*.55)*scene.drawHeight*.035*amount;
       rotation=Math.sin(phase*.36)*.07*amount;
     }
+    if (!scene.editing) bob+=popOffset(scene,time);
     drawShadow(context,scene,action,time);
     context.save();
     context.translate(scene.x,scene.y-bob);
     context.rotate(rotation);
     context.scale(scene.direction*scaleX,scaleY);
-    context.drawImage(scene.sprite,-scene.drawWidth/2,-scene.drawHeight/2,scene.drawWidth,scene.drawHeight);
+    if (scene.rig){
+      const rig=scene.rig;
+      const angles=scene.editing ? new Float32Array(rig.bones.length) : window.AtelierRig.pose(rig,action,time,reduceMotion?.35:1);
+      const out=window.AtelierRig.render(rig,angles);
+      const s=scene.drawWidth/scene.sprite.width;
+      context.drawImage(out.canvas,(-rig.W/2-out.pad)*s,(-rig.H/2-out.pad)*s,(rig.W+out.pad*2)*s,(rig.H+out.pad*2)*s);
+    }else{
+      context.drawImage(scene.sprite,-scene.drawWidth/2,-scene.drawHeight/2,scene.drawWidth,scene.drawHeight);
+    }
     context.restore();
+    if (scene.editing) drawJoints(context,scene);
+  }
+
+  function jointToStage(scene,joint){
+    const s=scene.drawWidth/scene.sprite.width;
+    return {x:scene.x+scene.direction*(joint.x-scene.sprite.width/2)*s, y:scene.y+(joint.y-scene.sprite.height/2)*s};
+  }
+
+  function stageToSprite(scene,point){
+    const s=scene.drawWidth/scene.sprite.width;
+    return {x:(point.x-scene.x)*scene.direction/s+scene.sprite.width/2, y:(point.y-scene.y)/s+scene.sprite.height/2};
+  }
+
+  function drawJoints(context,scene){
+    const rig=scene.rig;
+    const unit=stageUnit();
+    context.save();
+    context.lineCap='round';
+    context.strokeStyle='rgba(255,255,255,.85)';
+    context.lineWidth=5*unit;
+    rig.bones.forEach((bone,index)=>{
+      if (!index) return;
+      const a=jointToStage(scene,rig.joints[bone.a]), b=jointToStage(scene,rig.joints[bone.b]);
+      context.beginPath(); context.moveTo(a.x,a.y); context.lineTo(b.x,b.y); context.stroke();
+    });
+    context.strokeStyle='rgba(224,120,60,.9)';
+    context.lineWidth=2.5*unit;
+    rig.bones.forEach((bone,index)=>{
+      if (!index) return;
+      const a=jointToStage(scene,rig.joints[bone.a]), b=jointToStage(scene,rig.joints[bone.b]);
+      context.beginPath(); context.moveTo(a.x,a.y); context.lineTo(b.x,b.y); context.stroke();
+    });
+    rig.joints.forEach((joint,index)=>{
+      const p=jointToStage(scene,joint);
+      const active=state.press && state.press.joint===index;
+      context.beginPath();
+      context.arc(p.x,p.y,(active?13:index?10:7)*unit,0,Math.PI*2);
+      context.fillStyle=index?'#ff8a3d':'rgba(255,255,255,.9)';
+      context.fill();
+      context.lineWidth=3*unit;
+      context.strokeStyle='#fff';
+      context.stroke();
+    });
+    context.restore();
+  }
+
+  // Stage pixels per CSS pixel.
+  function stageUnit(){
+    const rect=els.stage.getBoundingClientRect();
+    return rect.width ? els.stage.width/rect.width : 1;
   }
 
   function drawAbstract(context,scene,action,time){
     const phase=time*.004+scene.seed;
     const amount=reduceMotion?.2:1;
     const ribbons=10;
+    const pop=popOffset(scene,time);
     const sourceWidth=scene.sprite.width/ribbons;
     const ribbonWidth=scene.drawWidth/ribbons;
     let rotation=0;
     if (action==='dance') rotation=Math.sin(phase*.8)*.09*amount;
     drawShadow(context,scene,action,time);
     context.save();
-    context.translate(scene.x,scene.y);
+    context.translate(scene.x,scene.y-pop);
     context.rotate(rotation);
     for (let i=0;i<ribbons;i++){
       const wave=Math.sin(phase*1.25+i*.72)*scene.drawHeight*(action==='dance'?.065:.032)*amount;
@@ -663,15 +736,115 @@
     state.lastFrame=0;
   }
 
-  function directArtwork(event){
+  function stagePoint(event){
+    const rect=els.stage.getBoundingClientRect();
+    const scene=state.scene;
+    return {x:(event.clientX-rect.left)/rect.width*scene.width, y:(event.clientY-rect.top)/rect.height*scene.height};
+  }
+
+  function onCharacter(scene,point){
+    const local=stageToSprite(scene,point);
+    if (scene.rig) return window.AtelierRig.maskAt(scene.rig,local.x,local.y);
+    return local.x>=0 && local.y>=0 && local.x<=scene.sprite.width && local.y<=scene.sprite.height;
+  }
+
+  function nearestJoint(scene,point){
+    const reach=26*stageUnit();
+    let best=-1,bestDistance=reach;
+    scene.rig.joints.forEach((joint,index)=>{
+      if (!index) return;
+      const p=jointToStage(scene,joint);
+      const d=Math.hypot(p.x-point.x,p.y-point.y);
+      if (d<bestDistance){ best=index; bestDistance=d; }
+    });
+    return best;
+  }
+
+  function setEditing(scene,on){
+    scene.editing=on;
+    clearTimeout(scene.editTimer);
+  }
+
+  function scheduleEditExit(scene){
+    clearTimeout(scene.editTimer);
+    scene.editTimer=setTimeout(()=>setEditing(scene,false),1600);
+  }
+
+  function boing(){
+    try{
+      const Audio=window.AudioContext||window.webkitAudioContext;
+      if (!Audio) return;
+      state.audio=state.audio||new Audio();
+      const ctx=state.audio, t=ctx.currentTime;
+      if (ctx.state==='suspended') ctx.resume();
+      const osc=ctx.createOscillator(), gain=ctx.createGain();
+      osc.type='sine';
+      osc.frequency.setValueAtTime(300,t);
+      osc.frequency.exponentialRampToValueAtTime(760,t+.12);
+      osc.frequency.exponentialRampToValueAtTime(430,t+.3);
+      gain.gain.setValueAtTime(.0001,t);
+      gain.gain.exponentialRampToValueAtTime(.2,t+.02);
+      gain.gain.exponentialRampToValueAtTime(.0001,t+.34);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t); osc.stop(t+.36);
+    }catch(error){ /* sound is optional */ }
+  }
+
+  function stageDown(event){
     const scene=state.scene;
     if (!scene) return;
+    const point=stagePoint(event);
+    els.stage.setPointerCapture(event.pointerId);
+    const press={id:event.pointerId,start:point,moved:false,joint:-1,timer:0};
+    state.press=press;
+    if (scene.editing){
+      press.joint=nearestJoint(scene,point);
+      if (press.joint>0) clearTimeout(scene.editTimer);
+      return;
+    }
+    if (scene.rig && onCharacter(scene,point)){
+      // Press and hold the drawing to reveal its joints.
+      press.timer=setTimeout(()=>{
+        if (state.press!==press || press.moved) return;
+        setEditing(scene,true);
+        press.joint=nearestJoint(scene,press.start);
+        press.held=true;
+      },480);
+    }
+  }
+
+  function stageMove(event){
+    const scene=state.scene, press=state.press;
+    if (!scene || !press || press.id!==event.pointerId) return;
+    const point=stagePoint(event);
+    if (Math.hypot(point.x-press.start.x,point.y-press.start.y)>12*stageUnit()) press.moved=true;
+    if (scene.editing && press.joint>0){
+      const local=stageToSprite(scene,point);
+      window.AtelierRig.moveJoint(scene.rig,press.joint,local.x,local.y);
+    }
+  }
+
+  function stageUp(event){
+    const scene=state.scene, press=state.press;
+    if (!scene || !press || press.id!==event.pointerId) return;
+    clearTimeout(press.timer);
+    state.press=null;
+    const point=stagePoint(event);
+    if (scene.editing){
+      if (press.joint>0 && press.moved){ window.AtelierRig.refresh(scene.rig); scheduleEditExit(scene); }
+      else if (press.held) scheduleEditExit(scene);
+      else if (press.joint<0) setEditing(scene,false);
+      else scheduleEditExit(scene);
+      return;
+    }
+    if (press.moved) return;
+    if (onCharacter(scene,point)){
+      scene.popAt=performance.now();
+      boing();
+      return;
+    }
     if (scene.action==='dance') selectAction('walk');
-    const rect=els.stage.getBoundingClientRect();
-    scene.target={
-      x:(event.clientX-rect.left)/rect.width*scene.width,
-      y:(event.clientY-rect.top)/rect.height*scene.height,
-    };
+    scene.target=point;
   }
 
   openButton.addEventListener('click',openLab);
@@ -681,8 +854,11 @@
   els.canvasSource.addEventListener('click',processCurrentDrawing);
   els.shutter.addEventListener('click',captureCamera);
   els.file.addEventListener('change',event=>loadPhoto(event.target.files && event.target.files[0]));
-  els.mode.addEventListener('click',toggleMode);
-  els.stage.addEventListener('pointerdown',directArtwork);
+  els.stage.addEventListener('pointerdown',stageDown);
+  els.stage.addEventListener('pointermove',stageMove);
+  els.stage.addEventListener('pointerup',stageUp);
+  els.stage.addEventListener('pointercancel',stageUp);
+  els.stage.addEventListener('contextmenu',event=>event.preventDefault());
   els.actions.addEventListener('click',event=>{
     const button=event.target.closest('[data-action]');
     if (button) selectAction(button.dataset.action);

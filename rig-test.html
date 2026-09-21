@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><body style="background:#eee;margin:0">
+<div id="out" style="display:flex;flex-wrap:wrap;gap:8px"></div><pre id="log"></pre>
+<script src="drawing-rig.js"></script>
+<script>
+function sprite(draw){const c=document.createElement('canvas');c.width=400;c.height=400;const x=c.getContext('2d');x.lineCap='round';x.lineJoin='round';x.strokeStyle='#222';x.lineWidth=7;draw(x);return c;}
+const tests={
+ stick:x=>{x.beginPath();x.arc(200,80,40,0,7);x.stroke();x.beginPath();x.moveTo(200,120);x.lineTo(200,250);x.moveTo(200,160);x.lineTo(120,210);x.moveTo(200,160);x.lineTo(280,210);x.moveTo(200,250);x.lineTo(150,370);x.moveTo(200,250);x.lineTo(250,370);x.stroke();},
+ dino:x=>{x.beginPath();x.ellipse(200,220,110,60,0,0,7);x.stroke();x.beginPath();x.moveTo(290,190);x.lineTo(330,90);x.arc(345,80,25,Math.PI,Math.PI*2.9);x.lineTo(310,200);x.stroke();x.beginPath();x.moveTo(95,210);x.quadraticCurveTo(40,200,10,160);x.moveTo(100,240);x.quadraticCurveTo(40,240,10,160);x.stroke();
+  [[140,270],[250,270]].forEach(([a,b])=>{x.beginPath();x.moveTo(a-15,b);x.lineTo(a-15,380);x.lineTo(a+15,380);x.lineTo(a+15,b);x.stroke();});},
+ kid:x=>{x.beginPath();x.arc(200,70,45,0,7);x.stroke();x.beginPath();x.moveTo(150,120);x.lineTo(250,120);x.lineTo(265,260);x.lineTo(135,260);x.closePath();x.stroke();
+  x.beginPath();x.moveTo(150,135);x.lineTo(80,220);x.lineTo(95,232);x.lineTo(155,165);x.moveTo(250,135);x.lineTo(320,220);x.lineTo(305,232);x.lineTo(245,165);x.stroke();
+  x.beginPath();x.moveTo(160,260);x.lineTo(155,385);x.lineTo(185,385);x.lineTo(190,260);x.moveTo(210,260);x.lineTo(215,385);x.lineTo(245,385);x.lineTo(240,260);x.stroke();},
+ cat:x=>{x.beginPath();x.ellipse(200,200,120,50,0,0,7);x.stroke();x.beginPath();x.arc(330,150,40,0,7);x.stroke();x.beginPath();x.moveTo(305,120);x.lineTo(310,90);x.lineTo(330,112);x.moveTo(340,110);x.lineTo(360,88);x.lineTo(362,122);x.stroke();
+  [110,160,240,290].forEach(a=>{x.beginPath();x.moveTo(a-10,240);x.lineTo(a-10,330);x.lineTo(a+10,330);x.lineTo(a+10,240);x.stroke();});x.beginPath();x.moveTo(82,190);x.bezierCurveTo(30,180,30,100,60,80);x.stroke();},
+ blob:x=>{x.beginPath();x.arc(200,200,120,0,7);x.stroke();x.beginPath();x.arc(160,180,10,0,7);x.arc(240,180,10,0,7);x.stroke();}
+};
+const log=[];
+for(const [name,fn] of Object.entries(tests)){
+ const s=sprite(fn); const t0=performance.now(); const rig=AtelierRig.build(s); const ms=(performance.now()-t0).toFixed(0);
+ if(!rig){log.push(name+': null');continue;}
+ log.push(`${name}: ${ms}ms joints=${rig.joints.length} bones=${rig.bones.length} verts=${rig.rest.length/2} roles=${rig.bones.slice(1).map(b=>b.role+'/'+b.part).join(',')}`);
+ for(const [act,tm] of [['rest',0],['walk',300],['walk',700],['dance',400]]){
+  const angles=act==='rest'?new Float32Array(rig.bones.length):AtelierRig.pose(rig,act,tm);
+  const r=AtelierRig.render(rig,angles);
+  const c=document.createElement('canvas');c.width=260;c.height=260;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,260,260);g.drawImage(r.canvas,0,0,260,260);
+  if(act==='rest'){const k=260/(rig.W+2*r.pad);g.fillStyle='#f60';rig.joints.forEach(j=>{g.beginPath();g.arc((j.x+r.pad)*k,(j.y+r.pad)*k,3,0,7);g.fill();});g.strokeStyle='#f60';rig.bones.slice(1).forEach(b=>{const a=rig.joints[b.a],e=rig.joints[b.b];g.beginPath();g.moveTo((a.x+r.pad)*k,(a.y+r.pad)*k);g.lineTo((e.x+r.pad)*k,(e.y+r.pad)*k);g.stroke();});}
+  c.title=name+' '+act;document.getElementById('out').appendChild(c);
+ }
+}
+document.getElementById('log').textContent=log.join('\n');
+</script>
