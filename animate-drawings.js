@@ -1,0 +1,696 @@
+'use strict';
+
+/*
+ * Atelier Lab MVP
+ * - Camera images are processed locally; no image leaves the device.
+ * - A lightweight matte separates marks from paper.
+ * - Connected-line analysis chooses character or imagination motion.
+ * - The mode stays user-correctable because abstract drawings are intentional.
+ */
+(() => {
+  const lab = document.querySelector('#magicLab');
+  const openButton = document.querySelector('#animateBtn');
+  if (!lab || !openButton) return;
+
+  const els = {
+    back: document.querySelector('#magicBack'),
+    close: document.querySelector('#magicClose'),
+    error: document.querySelector('#magicError'),
+    source: document.querySelector('#magicSourceView'),
+    camera: document.querySelector('#magicCameraView'),
+    processing: document.querySelector('#magicProcessingView'),
+    play: document.querySelector('#magicPlayView'),
+    actions: document.querySelector('#magicActions'),
+    cameraSource: document.querySelector('#magicCameraSource'),
+    canvasSource: document.querySelector('#magicCanvasSource'),
+    video: document.querySelector('#magicVideo'),
+    shutter: document.querySelector('#magicShutter'),
+    file: document.querySelector('#magicFile'),
+    stage: document.querySelector('#magicStage'),
+    mode: document.querySelector('#magicMode'),
+    playHint: document.querySelector('#magicPlayHint'),
+  };
+  const views = {
+    source: els.source,
+    camera: els.camera,
+    processing: els.processing,
+    play: els.play,
+  };
+  const stageContext = els.stage.getContext('2d', {alpha:false, desynchronized:true}) || els.stage.getContext('2d');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const state = {
+    view: 'source',
+    stream: null,
+    frame: 0,
+    lastFrame: 0,
+    scene: null,
+    previousFocus: null,
+  };
+
+  function setView(name){
+    state.view = name;
+    Object.entries(views).forEach(([key, view]) => { view.hidden = key !== name; });
+    els.back.hidden = name === 'source';
+    els.actions.hidden = name !== 'play';
+  }
+
+  function clearError(){ els.error.textContent = ''; }
+
+  function showError(message){
+    stopCamera();
+    stopAnimation();
+    setView('source');
+    els.error.textContent = message;
+  }
+
+  function openLab(){
+    state.previousFocus = document.activeElement;
+    clearError();
+    setView('source');
+    lab.classList.add('is-open');
+    lab.setAttribute('aria-hidden','false');
+    document.querySelectorAll('.panel.show').forEach(panel => panel.classList.remove('show'));
+    requestAnimationFrame(() => els.close.focus());
+  }
+
+  function closeLab(){
+    stopCamera();
+    stopAnimation();
+    lab.classList.remove('is-open');
+    lab.setAttribute('aria-hidden','true');
+    state.scene = null;
+    if (state.previousFocus && document.contains(state.previousFocus)) state.previousFocus.focus();
+  }
+
+  function goBack(){
+    stopCamera();
+    stopAnimation();
+    state.scene = null;
+    clearError();
+    setView('source');
+  }
+
+  async function startCamera(){
+    clearError();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      showError('這個瀏覽器無法直接開啟相機；請使用「選擇照片」，或以 HTTPS 開啟 Atelier。');
+      return;
+    }
+    setView('camera');
+    try{
+      stopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio:false,
+        video:{
+          facingMode:{ideal:'environment'},
+          width:{ideal:1920},
+          height:{ideal:1440},
+        },
+      });
+      if (state.view !== 'camera'){
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      state.stream = stream;
+      els.video.srcObject = stream;
+      await els.video.play();
+    }catch(error){
+      console.warn('Atelier camera unavailable', error);
+      showError('沒有取得相機畫面。你可以允許相機權限後重試，或直接選擇一張照片。');
+    }
+  }
+
+  function stopCamera(){
+    if (state.stream){
+      state.stream.getTracks().forEach(track => track.stop());
+      state.stream = null;
+    }
+    els.video.pause();
+    els.video.srcObject = null;
+  }
+
+  function limitedCanvas(width, height, maxSide=1400){
+    const scale = Math.min(1, maxSide / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    return canvas;
+  }
+
+  function captureCamera(){
+    const videoWidth = els.video.videoWidth;
+    const videoHeight = els.video.videoHeight;
+    if (!videoWidth || !videoHeight){
+      showError('相機還在準備中，請稍等一下再拍。');
+      return;
+    }
+    // Map the visible guide through object-fit: cover back into video pixels.
+    const elementWidth=els.video.clientWidth || videoWidth;
+    const elementHeight=els.video.clientHeight || videoHeight;
+    const coverScale=Math.max(elementWidth/videoWidth,elementHeight/videoHeight);
+    const coverOffsetX=(videoWidth*coverScale-elementWidth)/2;
+    const coverOffsetY=(videoHeight*coverScale-elementHeight)/2;
+    const sx = (coverOffsetX+elementWidth*.07)/coverScale;
+    const sy = (coverOffsetY+elementHeight*.11)/coverScale;
+    const sw = elementWidth*.86/coverScale;
+    const sh = elementHeight*.74/coverScale;
+    const photo = limitedCanvas(sw, sh);
+    photo.getContext('2d', {willReadFrequently:true}).drawImage(
+      els.video, sx, sy, sw, sh, 0, 0, photo.width, photo.height
+    );
+    stopCamera();
+    processCameraPhoto(photo);
+  }
+
+  async function loadPhoto(file){
+    if (!file) return;
+    stopCamera();
+    setView('processing');
+    try{
+      const decoded = await decodePhoto(file);
+      const photo = limitedCanvas(decoded.width, decoded.height);
+      try{
+        photo.getContext('2d', {willReadFrequently:true}).drawImage(decoded.image,0,0,photo.width,photo.height);
+      }finally{
+        decoded.release();
+      }
+      await processCameraPhoto(photo);
+    }catch(error){
+      console.warn('Atelier photo decode failed', error);
+      showError('無法讀取這張照片，請換一張再試。');
+    }finally{
+      els.file.value = '';
+    }
+  }
+
+  async function decodePhoto(file){
+    if (typeof createImageBitmap === 'function'){
+      const bitmap=await createImageBitmap(file,{imageOrientation:'from-image'});
+      return {image:bitmap,width:bitmap.width,height:bitmap.height,release:()=>bitmap.close && bitmap.close()};
+    }
+    const url=URL.createObjectURL(file);
+    try{
+      const image=await new Promise((resolve,reject)=>{
+        const candidate=new Image();
+        candidate.onload=()=>resolve(candidate);
+        candidate.onerror=reject;
+        candidate.src=url;
+      });
+      return {image,width:image.naturalWidth,height:image.naturalHeight,release:()=>URL.revokeObjectURL(url)};
+    }catch(error){
+      URL.revokeObjectURL(url);
+      throw error;
+    }
+  }
+
+  function compositeVisibleInk(){
+    if (typeof S === 'undefined' || !S.doc) return null;
+    const doc = S.doc;
+    const ink = document.createElement('canvas');
+    ink.width = doc.w;
+    ink.height = doc.h;
+    const context = ink.getContext('2d', {willReadFrequently:true});
+    doc.layers.forEach(layer => {
+      if (!layer.visible) return;
+      context.globalAlpha = layer.opacity;
+      context.drawImage(layer.canvas,0,0);
+    });
+    context.globalAlpha = 1;
+    return ink;
+  }
+
+  function makePaperBackground(width, height, color){
+    const background = limitedCanvas(width,height);
+    const context = background.getContext('2d');
+    context.fillStyle = color || '#FBF8F1';
+    context.fillRect(0,0,background.width,background.height);
+    // A quiet fiber pattern keeps the animated scene feeling like the original sheet.
+    context.globalAlpha = .035;
+    context.fillStyle = '#3b352b';
+    const step = Math.max(4, Math.round(background.width / 220));
+    for (let y=step; y<background.height; y+=step){
+      for (let x=(y/step%2)*step; x<background.width; x+=step*2){
+        if (((x*13+y*17) % 11) < 2) context.fillRect(x,y,1,1);
+      }
+    }
+    context.globalAlpha = 1;
+    return background;
+  }
+
+  async function processCurrentDrawing(){
+    clearError();
+    const ink = compositeVisibleInk();
+    if (!ink){
+      showError('請先開啟一張作品，再讓它動起來。');
+      return;
+    }
+    setView('processing');
+    await nextPaint();
+    const paper = (S.doc.paper && S.doc.paper.tone) || '#FBF8F1';
+    const background = makePaperBackground(ink.width,ink.height,paper);
+    try{
+      buildScene(ink,background,'canvas');
+    }catch(error){
+      console.warn('Atelier drawing animation failed', error);
+      showError(error.message || '目前畫布上還沒有足夠的線條可以喚醒。');
+    }
+  }
+
+  function nextPaint(){
+    return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+
+  async function processCameraPhoto(photo){
+    setView('processing');
+    await nextPaint();
+    try{
+      const separated = separateInkFromPaper(photo);
+      buildScene(separated.ink,separated.background,'camera');
+    }catch(error){
+      console.warn('Atelier paper separation failed', error);
+      showError(error.message || '沒有找到清楚的筆跡。請靠近一點，並讓紙張平均受光。');
+    }
+  }
+
+  function median(values){
+    values.sort((a,b) => a-b);
+    return values[Math.floor(values.length/2)] || 245;
+  }
+
+  function estimatePaper(data,width,height){
+    const red=[];
+    const green=[];
+    const blue=[];
+    const edge = Math.max(2, Math.round(Math.min(width,height)*.055));
+    const step = Math.max(2,Math.round(Math.min(width,height)/180));
+    for (let y=0; y<height; y+=step){
+      for (let x=0; x<width; x+=step){
+        if (x>edge && x<width-edge && y>edge && y<height-edge) continue;
+        const i=(y*width+x)*4;
+        red.push(data[i]); green.push(data[i+1]); blue.push(data[i+2]);
+      }
+    }
+    return [median(red),median(green),median(blue)];
+  }
+
+  function smoothstep(low,high,value){
+    const t = Math.max(0,Math.min(1,(value-low)/(high-low)));
+    return t*t*(3-2*t);
+  }
+
+  function separateInkFromPaper(photo){
+    const width=photo.width;
+    const height=photo.height;
+    const sourceContext=photo.getContext('2d',{willReadFrequently:true});
+    const source=sourceContext.getImageData(0,0,width,height);
+    const [br,bg,bb]=estimatePaper(source.data,width,height);
+    const paperLuma=br*.2126+bg*.7152+bb*.0722;
+    const ink=document.createElement('canvas');
+    ink.width=width; ink.height=height;
+    const inkContext=ink.getContext('2d',{willReadFrequently:true});
+    const inkData=inkContext.createImageData(width,height);
+    const background=document.createElement('canvas');
+    background.width=width; background.height=height;
+    const backgroundContext=background.getContext('2d',{willReadFrequently:true});
+    const clean=backgroundContext.createImageData(width,height);
+    let confidentPixels=0;
+    for (let i=0; i<source.data.length; i+=4){
+      const r=source.data[i], g=source.data[i+1], b=source.data[i+2];
+      const luma=r*.2126+g*.7152+b*.0722;
+      const colorDistance=Math.hypot(r-br,g-bg,b-bb);
+      const darkening=Math.max(0,paperLuma-luma);
+      const score=colorDistance+darkening*.72;
+      const alpha=smoothstep(20,76,score);
+      inkData.data[i]=r;
+      inkData.data[i+1]=g;
+      inkData.data[i+2]=b;
+      inkData.data[i+3]=Math.round(alpha*255);
+      if (alpha>.36) confidentPixels++;
+      const repair=alpha*.97;
+      clean.data[i]=Math.round(r*(1-repair)+br*repair);
+      clean.data[i+1]=Math.round(g*(1-repair)+bg*repair);
+      clean.data[i+2]=Math.round(b*(1-repair)+bb*repair);
+      clean.data[i+3]=255;
+    }
+    const minimum=Math.max(80,width*height*.00018);
+    if (confidentPixels<minimum) throw new Error('沒有找到清楚的筆跡。請讓紙張填滿框線，並避免強烈陰影。');
+    inkContext.putImageData(inkData,0,0);
+    backgroundContext.putImageData(clean,0,0);
+    return {ink,background};
+  }
+
+  function trimForeground(source){
+    const context=source.getContext('2d',{willReadFrequently:true});
+    const {data}=context.getImageData(0,0,source.width,source.height);
+    let left=source.width, top=source.height, right=-1, bottom=-1, count=0;
+    for (let y=0; y<source.height; y++){
+      for (let x=0; x<source.width; x++){
+        if (data[(y*source.width+x)*4+3]<22) continue;
+        count++;
+        if (x<left) left=x;
+        if (x>right) right=x;
+        if (y<top) top=y;
+        if (y>bottom) bottom=y;
+      }
+    }
+    if (count<60 || right<left || bottom<top) throw new Error('目前還沒有足夠的筆跡可以喚醒。先畫一個角色或幾條大膽的線吧。');
+    const pad=Math.max(4,Math.round(Math.max(right-left,bottom-top)*.035));
+    left=Math.max(0,left-pad); top=Math.max(0,top-pad);
+    right=Math.min(source.width-1,right+pad); bottom=Math.min(source.height-1,bottom+pad);
+    const sprite=document.createElement('canvas');
+    sprite.width=right-left+1;
+    sprite.height=bottom-top+1;
+    sprite.getContext('2d').drawImage(source,left,top,sprite.width,sprite.height,0,0,sprite.width,sprite.height);
+    return {sprite,count};
+  }
+
+  function analyseLines(sprite){
+    const size=72;
+    const sample=document.createElement('canvas');
+    sample.width=size; sample.height=size;
+    const context=sample.getContext('2d',{willReadFrequently:true});
+    context.drawImage(sprite,0,0,size,size);
+    const data=context.getImageData(0,0,size,size).data;
+    const filled=new Uint8Array(size*size);
+    let total=0;
+    for (let i=0; i<filled.length; i++){
+      if (data[i*4+3]>42){ filled[i]=1; total++; }
+    }
+    const seen=new Uint8Array(filled.length);
+    const queue=new Int32Array(filled.length);
+    const components=[];
+    for (let start=0; start<filled.length; start++){
+      if (!filled[start] || seen[start]) continue;
+      let head=0,tail=0,componentSize=0;
+      queue[tail++]=start; seen[start]=1;
+      while (head<tail){
+        const index=queue[head++]; componentSize++;
+        const x=index%size, y=(index/size)|0;
+        const neighbours=[index-1,index+1,index-size,index+size];
+        for (let n=0;n<4;n++){
+          const next=neighbours[n];
+          if (next<0 || next>=filled.length || seen[next] || !filled[next]) continue;
+          if (n===0 && x===0 || n===1 && x===size-1 || n===2 && y===0 || n===3 && y===size-1) continue;
+          seen[next]=1; queue[tail++]=next;
+        }
+      }
+      if (componentSize>1) components.push(componentSize);
+    }
+    components.sort((a,b)=>b-a);
+    const dominance=total ? (components[0]||0)/total : 0;
+    const meaningful=components.filter(value=>value>Math.max(2,total*.012)).length;
+    const occupancy=total/(size*size);
+    const kind=dominance>.44 && meaningful<=12 && occupancy<.62 ? 'character' : 'abstract';
+    return {kind,dominance,meaningful,occupancy};
+  }
+
+  function scaleBackground(source,maxSide=1400){
+    const output=limitedCanvas(source.width,source.height,maxSide);
+    output.getContext('2d').drawImage(source,0,0,output.width,output.height);
+    return output;
+  }
+
+  function buildScene(foreground,background,sourceType){
+    const sceneForeground=scaleBackground(foreground);
+    const trimmed=trimForeground(sceneForeground);
+    const analysis=analyseLines(trimmed.sprite);
+    const sceneBackground=scaleBackground(background);
+    const scene={
+      width:sceneBackground.width,
+      height:sceneBackground.height,
+      background:sceneBackground,
+      sprite:trimmed.sprite,
+      kind:analysis.kind,
+      sourceType,
+      action:'surprise',
+      surpriseAction:'walk',
+      surpriseAt:0,
+      x:sceneBackground.width*.5,
+      y:sceneBackground.height*.64,
+      vx:sceneBackground.width*.085,
+      vy:sceneBackground.height*.045,
+      direction:1,
+      target:null,
+      seed:Math.random()*1000,
+    };
+    state.scene=scene;
+    els.stage.width=scene.width;
+    els.stage.height=scene.height;
+    setSceneSize();
+    updateModeLabel();
+    updateActionButtons();
+    els.playHint.textContent=scene.kind==='character' ? '點紙面，讓它往那裡移動' : '抽象也不會失敗：線條會變成一種新的生物';
+    setView('play');
+    startAnimation();
+  }
+
+  function setSceneSize(){
+    const scene=state.scene;
+    if (!scene) return;
+    const widthLimit=scene.kind==='character'?.34:.52;
+    const heightLimit=scene.kind==='character'?.48:.58;
+    const scale=Math.min(scene.width*widthLimit/scene.sprite.width,scene.height*heightLimit/scene.sprite.height,1.8);
+    scene.drawWidth=Math.max(28,scene.sprite.width*scale);
+    scene.drawHeight=Math.max(28,scene.sprite.height*scale);
+    scene.x=Math.max(scene.drawWidth*.55,Math.min(scene.width-scene.drawWidth*.55,scene.x));
+    scene.y=Math.max(scene.drawHeight*.55,Math.min(scene.height-scene.drawHeight*.55,scene.y));
+  }
+
+  function updateModeLabel(){
+    const scene=state.scene;
+    if (!scene) return;
+    els.mode.textContent=scene.kind==='character' ? '線條判斷：角色模式' : '線條判斷：想像模式';
+    els.mode.setAttribute('aria-label', scene.kind==='character' ? '目前是角色模式，點擊切換成想像模式' : '目前是想像模式，點擊切換成角色模式');
+  }
+
+  function toggleMode(){
+    const scene=state.scene;
+    if (!scene) return;
+    scene.kind=scene.kind==='character'?'abstract':'character';
+    scene.target=null;
+    setSceneSize();
+    updateModeLabel();
+    els.playHint.textContent=scene.kind==='character' ? '角色模式會把整幅畫當成一個小生命' : '想像模式會讓分散、抽象的線條各自起舞';
+  }
+
+  function updateActionButtons(){
+    const scene=state.scene;
+    if (!scene) return;
+    els.actions.querySelectorAll('[data-action]').forEach(button => {
+      const active=button.dataset.action===scene.action;
+      button.classList.toggle('is-active',active);
+      button.setAttribute('aria-pressed',active?'true':'false');
+    });
+  }
+
+  function selectAction(action){
+    const scene=state.scene;
+    if (!scene) return;
+    scene.action=action;
+    scene.target=null;
+    scene.surpriseAt=0;
+    if (action==='walk' || action==='hop') scene.vx=(scene.direction||1)*scene.width*.085;
+    updateActionButtons();
+  }
+
+  function activeAction(scene,time){
+    if (scene.action!=='surprise') return scene.action;
+    if (time>=scene.surpriseAt){
+      const options=['walk','hop','dance','float'].filter(item=>item!==scene.surpriseAction);
+      scene.surpriseAction=options[Math.floor(Math.random()*options.length)];
+      scene.surpriseAt=time+3200+Math.random()*2600;
+    }
+    return scene.surpriseAction;
+  }
+
+  function keepInBounds(scene){
+    const halfW=scene.drawWidth*.55;
+    const halfH=scene.drawHeight*.55;
+    if (scene.x<halfW){ scene.x=halfW; scene.vx=Math.abs(scene.vx); }
+    if (scene.x>scene.width-halfW){ scene.x=scene.width-halfW; scene.vx=-Math.abs(scene.vx); }
+    if (scene.y<halfH){ scene.y=halfH; scene.vy=Math.abs(scene.vy); }
+    if (scene.y>scene.height-halfH){ scene.y=scene.height-halfH; scene.vy=-Math.abs(scene.vy); }
+    if (Math.abs(scene.vx)>1) scene.direction=scene.vx<0?-1:1;
+  }
+
+  function updateScene(scene,action,time,delta){
+    const motionScale=reduceMotion?.28:1;
+    const halfH=scene.drawHeight*.5;
+    const floor=scene.height-halfH-scene.height*.055;
+    if (scene.target && (action==='walk' || action==='hop' || action==='float')){
+      const dx=scene.target.x-scene.x;
+      const dy=scene.target.y-scene.y;
+      const distance=Math.hypot(dx,dy);
+      if (distance<scene.width*.018) scene.target=null;
+      else{
+        const speed=scene.width*(action==='float'?.07:.105)*motionScale;
+        scene.vx=dx/distance*speed;
+        if (action==='float') scene.vy=dy/distance*speed;
+      }
+    }
+    if (action==='walk'){
+      scene.x+=scene.vx*delta*motionScale;
+      scene.y+=(floor-scene.y)*Math.min(1,delta*7);
+    }else if (action==='hop'){
+      scene.x+=scene.vx*delta*.72*motionScale;
+      const jump=Math.abs(Math.sin(time*.0042))*scene.height*.14*motionScale;
+      scene.y+=(floor-jump-scene.y)*Math.min(1,delta*11);
+    }else if (action==='float'){
+      scene.x+=scene.vx*delta*motionScale;
+      scene.y+=scene.vy*delta*motionScale;
+    }else if (action==='dance'){
+      scene.y+=(scene.height*.58-scene.y)*Math.min(1,delta*4);
+    }
+    keepInBounds(scene);
+  }
+
+  function drawShadow(context,scene,action,time){
+    if (action==='float') return;
+    const jump=action==='hop'?Math.abs(Math.sin(time*.0042)):0;
+    context.save();
+    context.globalAlpha=.13*(1-jump*.5);
+    context.filter=`blur(${Math.max(2,scene.width*.004)}px)`;
+    context.fillStyle='#28251f';
+    context.beginPath();
+    context.ellipse(scene.x,Math.min(scene.height*.94,scene.y+scene.drawHeight*.48),scene.drawWidth*.34*(1-jump*.22),scene.drawHeight*.055,0,0,Math.PI*2);
+    context.fill();
+    context.restore();
+  }
+
+  function drawCharacter(context,scene,action,time){
+    const phase=time*.006+scene.seed;
+    const amount=reduceMotion?.24:1;
+    let bob=0,rotation=0,scaleX=1,scaleY=1;
+    if (action==='walk'){
+      bob=Math.abs(Math.sin(phase*1.35))*scene.drawHeight*.022*amount;
+      rotation=Math.sin(phase*.68)*.025*amount;
+      scaleX=1+Math.sin(phase*1.35)*.018*amount;
+      scaleY=1-Math.sin(phase*1.35)*.018*amount;
+    }else if (action==='hop'){
+      rotation=Math.sin(phase*.7)*.045*amount;
+      scaleX=1+Math.sin(phase)*.045*amount;
+      scaleY=1-Math.sin(phase)*.045*amount;
+    }else if (action==='dance'){
+      bob=Math.abs(Math.sin(phase*1.6))*scene.drawHeight*.045*amount;
+      rotation=Math.sin(phase*.95)*.12*amount;
+      scaleX=1+Math.sin(phase*1.9)*.055*amount;
+      scaleY=1-Math.sin(phase*1.9)*.035*amount;
+    }else if (action==='float'){
+      bob=Math.sin(phase*.55)*scene.drawHeight*.035*amount;
+      rotation=Math.sin(phase*.36)*.07*amount;
+    }
+    drawShadow(context,scene,action,time);
+    context.save();
+    context.translate(scene.x,scene.y-bob);
+    context.rotate(rotation);
+    context.scale(scene.direction*scaleX,scaleY);
+    context.drawImage(scene.sprite,-scene.drawWidth/2,-scene.drawHeight/2,scene.drawWidth,scene.drawHeight);
+    context.restore();
+  }
+
+  function drawAbstract(context,scene,action,time){
+    const phase=time*.004+scene.seed;
+    const amount=reduceMotion?.2:1;
+    const ribbons=10;
+    const sourceWidth=scene.sprite.width/ribbons;
+    const ribbonWidth=scene.drawWidth/ribbons;
+    let rotation=0;
+    if (action==='dance') rotation=Math.sin(phase*.8)*.09*amount;
+    drawShadow(context,scene,action,time);
+    context.save();
+    context.translate(scene.x,scene.y);
+    context.rotate(rotation);
+    for (let i=0;i<ribbons;i++){
+      const wave=Math.sin(phase*1.25+i*.72)*scene.drawHeight*(action==='dance'?.065:.032)*amount;
+      const sway=Math.cos(phase*.83+i*.48)*scene.drawWidth*.022*amount;
+      const stretch=1+Math.sin(phase*.9+i*.55)*.035*amount;
+      context.drawImage(
+        scene.sprite,
+        i*sourceWidth,0,sourceWidth+.6,scene.sprite.height,
+        -scene.drawWidth/2+i*ribbonWidth+sway,-scene.drawHeight*stretch/2+wave,
+        ribbonWidth+1.4,scene.drawHeight*stretch
+      );
+      if (action==='surprise' && i%3===0) context.globalAlpha=.92;
+    }
+    context.restore();
+  }
+
+  function drawSparkles(context,scene,time){
+    if (scene.action!=='surprise' || reduceMotion) return;
+    context.save();
+    context.fillStyle='rgba(201,174,61,.72)';
+    for (let i=0;i<5;i++){
+      const angle=time*.00055+i*1.7+scene.seed;
+      const radius=scene.drawWidth*(.56+i*.035);
+      const x=scene.x+Math.cos(angle)*radius;
+      const y=scene.y+Math.sin(angle*1.23)*scene.drawHeight*.62;
+      const size=2+(i%3);
+      context.translate(x,y);
+      context.rotate(angle);
+      context.fillRect(-size*.5,-size*2,size,size*4);
+      context.fillRect(-size*2,-size*.5,size*4,size);
+      context.setTransform(1,0,0,1,0,0);
+    }
+    context.restore();
+  }
+
+  function drawFrame(time){
+    const scene=state.scene;
+    if (!scene || state.view!=='play') return;
+    const delta=state.lastFrame?Math.min(.05,(time-state.lastFrame)/1000):0;
+    state.lastFrame=time;
+    const action=activeAction(scene,time);
+    updateScene(scene,action,time,delta);
+    stageContext.setTransform(1,0,0,1,0,0);
+    stageContext.globalAlpha=1;
+    stageContext.filter='none';
+    stageContext.drawImage(scene.background,0,0,scene.width,scene.height);
+    if (scene.kind==='character') drawCharacter(stageContext,scene,action,time);
+    else drawAbstract(stageContext,scene,action,time);
+    drawSparkles(stageContext,scene,time);
+    state.frame=requestAnimationFrame(drawFrame);
+  }
+
+  function startAnimation(){
+    stopAnimation();
+    state.lastFrame=0;
+    state.frame=requestAnimationFrame(drawFrame);
+  }
+
+  function stopAnimation(){
+    if (state.frame) cancelAnimationFrame(state.frame);
+    state.frame=0;
+    state.lastFrame=0;
+  }
+
+  function directArtwork(event){
+    const scene=state.scene;
+    if (!scene) return;
+    if (scene.action==='dance') selectAction('walk');
+    const rect=els.stage.getBoundingClientRect();
+    scene.target={
+      x:(event.clientX-rect.left)/rect.width*scene.width,
+      y:(event.clientY-rect.top)/rect.height*scene.height,
+    };
+  }
+
+  openButton.addEventListener('click',openLab);
+  els.close.addEventListener('click',closeLab);
+  els.back.addEventListener('click',goBack);
+  els.cameraSource.addEventListener('click',startCamera);
+  els.canvasSource.addEventListener('click',processCurrentDrawing);
+  els.shutter.addEventListener('click',captureCamera);
+  els.file.addEventListener('change',event=>loadPhoto(event.target.files && event.target.files[0]));
+  els.mode.addEventListener('click',toggleMode);
+  els.stage.addEventListener('pointerdown',directArtwork);
+  els.actions.addEventListener('click',event=>{
+    const button=event.target.closest('[data-action]');
+    if (button) selectAction(button.dataset.action);
+  });
+  document.addEventListener('keydown',event=>{
+    if (event.key==='Escape' && lab.classList.contains('is-open')) closeLab();
+  });
+  document.addEventListener('visibilitychange',()=>{
+    if (document.hidden && lab.classList.contains('is-open')) stopCamera();
+  });
+})();

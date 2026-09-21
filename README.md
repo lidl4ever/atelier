@@ -11,9 +11,12 @@ A free, intuitive drawing app for iPad — built to be better than WeTransfer Pa
 - **紙張選擇** — 四種紙色 × 三種紙紋（熟宣／素描紙／生宣），影響鉛筆顆粒與毛筆暈染
 - **手指＝塗抹** — Pencil 繪圖、指腹推開顏料
 - **圖層** — 多圖層、透明度、合併（Paper 沒有的功能）
+- **讓畫動起來（Beta）** — 拍下紙上作品或使用目前畫布，讓角色散步、跳躍、跳舞；抽象線條會進入「想像模式」
 - **手勢** — 捏合縮放、兩指輕點復原、三指重做
 - 自動儲存於裝置（IndexedDB）、匯出全解析度 PNG、完全免費
 
 ## Run
 
 No build step. Open `index.html` in any modern browser, or host it (GitHub Pages / Netlify) and open on iPad Safari → Share → Add to Home Screen.
+
+相機功能需要 HTTPS（或 localhost）；直接用 `file://` 開啟時仍可從照片圖庫選圖，或讓 app 內的作品動起來。

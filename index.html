@@ -10,12 +10,14 @@
 <title>Atelier — 你的畫室</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="animate-drawings.css">
 <style>
 :root{
   --paper:#F6F1E8; --canvas-paper:#FBF8F1; --ink:#26241F; --ink-soft:#6E675C;
   --accent:#C25E40; --line:rgba(38,36,31,.12);
   --chrome:rgba(251,248,241,.82); --shadow:0 8px 30px rgba(38,36,31,.14), 0 1px 3px rgba(38,36,31,.08);
-  --dock-height:144px; --dock-top:46px; --dock-bottom:98px; --dock-peek:22px;
+  --dock-width:min(96vw,1040px);
+  --dock-height:clamp(118px,24.75vw,268px); --dock-top:46px; --dock-bottom:98px; --dock-peek:22px;
   --dock-panel-offset:calc(env(safe-area-inset-bottom) + var(--dock-height) + 18px);
   --serif:"Fraunces", Georgia, serif;
   --sans:ui-sans-serif, -apple-system, "PingFang TC", sans-serif;
@@ -153,12 +155,12 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   box-shadow:var(--shadow);padding:16px;display:none}
 .panel.show{display:block}
 .panel h3{font-size:11px;letter-spacing:.18em;color:var(--ink-soft);font-weight:600;margin-bottom:12px}
-#colorPanel{bottom:var(--dock-panel-offset);left:50%;transform:translateX(-50%);width:312px}
-#swatches{display:grid;grid-template-columns:repeat(8,1fr);gap:9px}
+#colorPanel{bottom:var(--dock-panel-offset);left:50%;transform:translateX(-50%);width:min(362px,calc(100vw - 32px))}
+#swatches{display:grid;grid-template-columns:repeat(auto-fill,30px);gap:18px 12px;justify-content:space-between}
 #swatches button{width:30px;height:30px;border-radius:50%;border:1px solid rgba(0,0,0,.08);transition:transform .12s}
 #swatches button.on{transform:scale(1.22);box-shadow:0 0 0 2px var(--canvas-paper),0 0 0 3.5px var(--ink)}
 #customColor{margin-top:14px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-soft)}
-#customColor input{width:44px;height:32px;border:none;background:none}
+#customColor input{width:78px;height:36px;border:1px solid var(--line);border-radius:2px;background:transparent;padding:0}
 #sizePanel{bottom:var(--dock-panel-offset);left:50%;transform:translateX(-50%);width:300px}
 .sizeRow{display:flex;align-items:center;gap:14px}
 .sizeRow input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line)}
@@ -230,6 +232,157 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   #colorPanel,#sizePanel{left:calc(env(safe-area-inset-left) + 158px);bottom:24px;transform:none}
   #toast{left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px)}
 }
+/* ───── 可拆元件工具面板 ───── */
+.tool-dock{
+  width:var(--dock-width);height:var(--dock-height);border:0;
+  border-radius:calc(var(--dock-height) * .45);overflow:visible;
+  background:
+    radial-gradient(ellipse at 46% 20%,rgba(84,89,97,.22),transparent 44%),
+    radial-gradient(ellipse at 30% 68%,rgba(95,101,111,.10),transparent 36%),
+    linear-gradient(180deg,#2a2d31 0%,#24272b 42%,#1c1f23 100%);
+  box-shadow:
+    0 18px 26px rgba(31,29,24,.18),
+    0 4px 10px rgba(0,0,0,.12),
+    inset 0 2px 2px rgba(255,255,255,.08),
+    inset 0 -2px 1px rgba(0,0,0,.18);
+  backdrop-filter:none;-webkit-backdrop-filter:none;display:block;
+}
+.tool-dock::before{
+  content:"";position:absolute;inset:0;z-index:0;border-radius:inherit;pointer-events:none;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.03),transparent 14%,transparent 86%,rgba(255,255,255,.03)),
+    radial-gradient(ellipse at 50% 50%,rgba(255,255,255,.035),transparent 62%);
+}
+.tool-dock::after{
+  content:"";position:absolute;left:8%;right:8%;bottom:-10px;height:22px;z-index:-1;
+  border-radius:50%;pointer-events:none;background:rgba(0,0,0,.28);filter:blur(12px);
+}
+.dock-grabber{
+  left:27%;right:27%;top:2%;z-index:4;width:auto;height:9%;transform:none;
+  border-radius:999px;background:transparent;box-shadow:none;
+}
+.dock-grabber:active,.dock-dragging .dock-grabber{background:rgba(255,255,255,.08)}
+.dock-top,.dock-bottom{position:absolute;inset:0;display:block;padding:0;background:none;border:0;pointer-events:none}
+.dock-action{display:none}
+.quick-colors{
+  position:absolute;left:50%;right:auto;top:8.5%;width:auto;height:auto;z-index:6;
+  display:grid;grid-template-columns:repeat(6,30px);gap:8px;padding:8px 11px;
+  border-radius:999px;background:rgba(9,10,11,.38);
+  box-shadow:inset 0 1px 8px rgba(0,0,0,.36);
+  transform:translateX(-50%);
+  pointer-events:auto;
+}
+.quick-colors button{
+  width:30px;height:30px;align-self:center;justify-self:center;
+  border:0;border-radius:999px;box-shadow:inset 0 1px 3px rgba(255,255,255,.18),0 4px 9px rgba(0,0,0,.22);
+  opacity:1;transform:none;position:relative;
+  transition:transform .18s cubic-bezier(.2,.9,.2,1.25),box-shadow .18s;
+}
+.quick-colors button::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  transition:box-shadow .18s,transform .18s cubic-bezier(.2,.9,.2,1.25);
+}
+.quick-colors button.on{transform:translateY(-1px) scale(1.08)}
+.quick-colors button.on::before{
+  box-shadow:0 0 0 4px rgba(255,255,255,.96),0 6px 14px rgba(0,0,0,.28);
+}
+.quick-colors button:active{transform:scale(.92)}
+.quick-colors button:focus-visible,.color-orb:focus-visible,.size-orb:focus-visible{
+  outline:2px solid rgba(255,255,255,.82);outline-offset:-2px;
+}
+.tool-btn:focus-visible{outline:none}
+.tool-rail{
+  position:absolute;left:8.45%;bottom:8.5%;width:72.5%;height:60%;z-index:2;
+  display:grid;grid-template-columns:repeat(7,1fr);gap:0;align-items:stretch;
+  overflow:visible;padding:0;scroll-snap-type:none;touch-action:manipulation;pointer-events:auto;
+}
+.tool-btn{
+  width:100%;height:100%;min-width:44px;flex:auto;border-radius:12px;opacity:1;
+  scroll-snap-align:none;transition:background .18s,box-shadow .18s;position:relative;
+}
+.tool-btn::before,.tool-btn::after{display:none}
+.tool-btn.on{background:none;box-shadow:none}
+.tool-btn:not(.on){opacity:1;filter:none}
+.tool-btn:active{transform:none;background:none}
+.tool-btn .tool-art{
+  display:flex;position:absolute;left:50%;bottom:2px;z-index:3;
+  align-items:flex-end;justify-content:center;
+  transform:translate(-50%,0) scale(1);
+  transform-origin:50% 92%;
+  filter:drop-shadow(0 10px 7px rgba(0,0,0,.35));
+  pointer-events:none;
+  transition:transform .26s cubic-bezier(.18,.95,.24,1.18),filter .22s;
+}
+.tool-btn .tool-art img{display:block;width:100%;height:100%;object-fit:contain;-webkit-user-drag:none;user-select:none}
+.tool-btn[data-tool="eraser"] .tool-art{width:74%;height:78%}
+.tool-btn[data-tool="pencil"] .tool-art{width:50%;height:92%}
+.tool-btn[data-tool="pen"] .tool-art{width:52%;height:94%}
+.tool-btn[data-tool="brush"] .tool-art{width:54%;height:104%}
+.tool-btn[data-tool="water"] .tool-art{width:64%;height:88%}
+.tool-btn[data-tool="marker"] .tool-art{width:46%;height:94%}
+.tool-btn[data-tool="smudge"] .tool-art{width:58%;height:96%}
+.tool-btn.on .tool-art{transform:translate(-50%,-16px) scale(1.04);filter:drop-shadow(0 16px 11px rgba(0,0,0,.42))}
+.tool-btn.on.pop .tool-art{animation:toolSpriteSelect .3s cubic-bezier(.16,1.08,.34,1)}
+.tool-btn:active:not(.on) .tool-art{transform:translate(-50%,2px) scale(.98)}
+@keyframes toolSpriteSelect{
+  0%{transform:translate(-50%,-4px) scale(.98)}
+  56%{transform:translate(-50%,-19px) scale(1.055)}
+  100%{transform:translate(-50%,-16px) scale(1.04)}
+}
+.dock-controls{
+  position:absolute;right:5.7%;bottom:9%;width:13%;height:30%;z-index:3;
+  display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0;pointer-events:auto;
+}
+.color-orb,.size-orb{
+  width:min(100%,44px);aspect-ratio:1/1;height:auto;align-self:end;justify-self:center;border-radius:50%;opacity:1;
+  display:flex;align-items:center;justify-content:center;position:relative;
+}
+.color-orb{
+  background:conic-gradient(from 8deg,#e3504e 0 15%,#e9bd55 15% 31%,#6ebc96 31% 48%,#3f82da 48% 66%,#513ae1 66% 83%,#8f62bf 83% 100%);
+  border:4px solid #090a0b;box-shadow:0 8px 14px rgba(0,0,0,.42),inset 0 0 0 1px rgba(255,255,255,.26);
+}
+.color-orb span{
+  display:block;width:42%;height:42%;border-radius:50%;background:var(--ink);
+  border:2px solid rgba(255,255,255,.95);box-shadow:0 4px 8px rgba(0,0,0,.28);
+}
+.size-orb{
+  background:radial-gradient(circle at 50% 45%,#e9e7df 0 16%,#8e918e 18% 27%,#2c2f30 30% 47%,#111315 52% 100%);
+  border:2px solid #090a0b;box-shadow:0 8px 14px rgba(0,0,0,.42),inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.size-orb i{display:block;border-radius:50%;background:rgba(232,229,221,.95);box-shadow:0 2px 5px rgba(0,0,0,.25)}
+.tool-btn[data-tip]:hover::before,
+.color-orb[data-tip]:hover::after,
+.size-orb[data-tip]:hover::after{
+  content:attr(data-tip);display:block;position:absolute;left:50%;bottom:calc(100% + 10px);
+  transform:translateX(-50%);white-space:nowrap;border-radius:7px;padding:5px 8px;
+  background:#111315;color:#fff;font:600 14px/1.25 var(--sans);
+  box-shadow:0 8px 18px rgba(0,0,0,.22);pointer-events:none;z-index:10;
+  filter:none;opacity:1;
+}
+@media (max-width:720px){
+  :root{--dock-width:calc(100vw - 14px);--dock-height:clamp(118px,30vw,168px)}
+  .tool-dock{width:var(--dock-width);height:var(--dock-height)}
+}
+@media (max-width:520px){
+  #topL{left:10px;gap:8px}
+  #title{display:none}
+  #topR{right:10px}
+  #topR .pill{padding:5px}
+  #topR .pill button{width:40px;height:40px}
+  #topR .pill .sep{margin:0 4px}
+}
+@media (orientation:landscape){
+  :root{--dock-width:min(82vw,980px);--dock-height:clamp(116px,20.65vw,252px);--dock-peek:22px}
+  #dock{
+    left:50%;top:auto;bottom:calc(env(safe-area-inset-bottom) + 10px);
+    transform:translateX(-50%) translateY(var(--dock-drag-y));
+  }
+  #dock.dock-hidden{--dock-drag-x:0px;--dock-drag-y:calc(var(--dock-height) - var(--dock-peek))}
+  #topL{left:16px}
+  #grades{left:50%;top:auto;bottom:calc(var(--dock-panel-offset) + 6px);transform:translateX(-50%);flex-direction:row}
+  #colorPanel,#sizePanel{left:50%;bottom:var(--dock-panel-offset);transform:translateX(-50%)}
+  #toast{left:50%;bottom:calc(var(--dock-panel-offset) + 54px)}
+}
 @media (prefers-reduced-motion:reduce){
   .tool-dock,.tool-btn,.tool-btn .tool-art,.dock-action,.quick-colors button,.color-orb,.size-orb{transition:none!important;animation:none!important}
 }
@@ -260,6 +413,7 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
       <button id="undoBtn" title="復原"><svg class="ic" viewBox="0 0 24 24"><path d="M8 5L3.5 9.5 8 14"/><path d="M3.5 9.5H15a5.5 5.5 0 1 1 0 11h-3"/></svg></button>
       <button id="redoBtn" title="重做"><svg class="ic" viewBox="0 0 24 24"><path d="M16 5l4.5 4.5L16 14"/><path d="M20.5 9.5H9a5.5 5.5 0 1 0 0 11h3"/></svg></button>
       <div class="sep"></div>
+      <button id="animateBtn" title="讓畫動起來" aria-label="讓畫動起來"><svg class="ic" viewBox="0 0 24 24"><path d="M5 19c3.4-5.8 6.7-8.8 10-9"/><path d="M14 4l.8 2.2L17 7l-2.2.8L14 10l-.8-2.2L10 7l2.2-.8z"/><path d="M19 11l.5 1.5L21 13l-1.5.5L19 15l-.5-1.5L17 13l1.5-.5z"/><path d="M4 15l2 2"/></svg></button>
       <button id="paperBtn" title="紙張"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/></svg></button>
       <button id="layersBtn" title="圖層"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
       <button id="exportBtn" title="匯出 PNG"><svg class="ic" viewBox="0 0 24 24"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg></button>
@@ -276,8 +430,8 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
     <div class="dock-bottom">
       <div class="tool-rail" id="toolRail"></div>
       <div class="dock-controls">
-        <button class="color-orb" id="colorBtn" title="顏色" aria-label="顏色"><span></span></button>
-        <button class="size-orb" id="sizeBtn" title="筆刷大小" aria-label="筆刷大小"><i></i></button>
+        <button class="color-orb" id="colorBtn" data-tip="顏色" aria-label="顏色"><span></span></button>
+        <button class="size-orb" id="sizeBtn" data-tip="筆刷大小" aria-label="筆刷大小"><i></i></button>
       </div>
     </div>
   </div>
@@ -322,6 +476,87 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
 </div>
 <div id="toast"></div>
 
+<!-- 畫作動畫實驗室 -->
+<section id="magicLab" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="magicTitle">
+  <div class="magic-shell">
+    <header class="magic-header">
+      <button class="magic-icon-btn" id="magicBack" type="button" aria-label="返回" hidden>
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="magic-heading">
+        <span class="magic-kicker">ATELIER LAB · BETA</span>
+        <h2 id="magicTitle">讓畫動起來</h2>
+      </div>
+      <button class="magic-icon-btn" id="magicClose" type="button" aria-label="關閉">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <main class="magic-main">
+      <div class="magic-view" id="magicSourceView">
+        <div class="magic-intro">
+          <div class="magic-spark" aria-hidden="true">✦</div>
+          <p>把紙上的恐龍、人物，甚至看不懂的線條喚醒。</p>
+        </div>
+        <div class="magic-source-grid">
+          <button class="magic-source-card magic-camera-card" id="magicCameraSource" type="button">
+            <span class="magic-card-art" aria-hidden="true">
+              <svg viewBox="0 0 120 96"><rect x="17" y="24" width="86" height="57" rx="14"/><path d="M42 24l7-11h22l7 11"/><circle cx="60" cy="52" r="17"/><circle cx="91" cy="34" r="3"/></svg>
+            </span>
+            <span><strong>拍下紙上的畫</strong><small>開啟後鏡頭，對準整張紙</small></span>
+          </button>
+          <button class="magic-source-card" id="magicCanvasSource" type="button">
+            <span class="magic-card-art magic-paper-art" aria-hidden="true">
+              <svg viewBox="0 0 120 96"><path d="M26 12h68v72H26z"/><path d="M39 65c5-28 14-42 26-42 14 0 5 27 20 36-10 3-16 10-21 17-5-13-12-19-25-11z"/></svg>
+            </span>
+            <span><strong>讓這張畫動起來</strong><small>使用目前畫布上的筆跡</small></span>
+          </button>
+        </div>
+        <div class="magic-source-notes">
+          <p class="magic-privacy">所有影像都只在這台裝置上處理</p>
+          <label class="magic-import" for="magicFile">從照片圖庫選擇</label>
+        </div>
+        <p class="magic-error" id="magicError" role="alert"></p>
+      </div>
+
+      <div class="magic-view" id="magicCameraView" hidden>
+        <div class="magic-camera-frame">
+          <video id="magicVideo" playsinline muted aria-label="相機預覽"></video>
+          <div class="magic-camera-shade" aria-hidden="true"></div>
+          <div class="magic-guide" aria-hidden="true"><span>讓紙張填滿框線</span></div>
+        </div>
+        <div class="magic-capture-row">
+          <button class="magic-shutter" id="magicShutter" type="button" aria-label="拍照"><span></span></button>
+          <label class="magic-file-label" for="magicFile">或選擇照片</label>
+        </div>
+      </div>
+
+      <div class="magic-view" id="magicProcessingView" hidden>
+        <div class="magic-processing-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h3>正在喚醒線條…</h3>
+        <p>分離紙張與筆跡，找到適合它的動作</p>
+      </div>
+
+      <div class="magic-view" id="magicPlayView" hidden>
+        <div class="magic-stage-wrap">
+          <canvas id="magicStage" aria-label="動畫中的畫作"></canvas>
+          <div class="magic-stage-vignette" aria-hidden="true"></div>
+          <button class="magic-mode" id="magicMode" type="button"></button>
+        </div>
+        <p class="magic-play-hint" id="magicPlayHint">點紙面，讓它往那裡移動</p>
+      </div>
+    </main>
+
+    <footer class="magic-actions" id="magicActions" hidden>
+      <button type="button" data-action="walk"><span>↝</span>散步</button>
+      <button type="button" data-action="hop"><span>⌃</span>跳跳</button>
+      <button type="button" data-action="dance"><span>♪</span>跳舞</button>
+      <button type="button" data-action="surprise" class="is-active"><span>✦</span>驚喜</button>
+    </footer>
+    <input id="magicFile" type="file" accept="image/*">
+  </div>
+</section>
+
 <script>
 'use strict';
 /* ════════════════ 工具函式 ════════════════ */
@@ -349,7 +584,7 @@ const DB = {
 };
 
 /* ════════════════ 全域狀態 ════════════════ */
-const APP_VERSION = 'v2.3';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
+const APP_VERSION = 'v2.4';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
 const PAPER = '#FBF8F1';
 const S = {
   doc:null,            // {id,name,w,h,scale,layers:[{canvas,ctx,visible,opacity}],active}
@@ -1364,7 +1599,7 @@ $('#clearLayer').addEventListener('click',()=>{
 /* ════════════════ 工具列 UI ════════════════ */
 const dockEl = $('#dock');
 const dockGrabber = $('#dockGrabber');
-function isSideDock(){ return matchMedia('(orientation: landscape)').matches; }
+function isSideDock(){ return false; }
 function dockPeek(){
   const v = getComputedStyle(document.documentElement).getPropertyValue('--dock-peek');
   return parseFloat(v) || 22;
@@ -1438,13 +1673,22 @@ const TOOL_META=[
   {id:'marker',name:'針筆',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="lnMetal" x1="29" y1="20" x2="51" y2="72" gradientUnits="userSpaceOnUse"><stop stop-color="#f0eee9"/><stop offset=".5" stop-color="#b9bab8"/><stop offset="1" stop-color="#777b7c"/></linearGradient><linearGradient id="lnBody" x1="28" y1="78" x2="53" y2="78" gradientUnits="userSpaceOnUse"><stop stop-color="#4c535c"/><stop offset=".38" stop-color="#222730"/><stop offset=".72" stop-color="#141820"/><stop offset="1" stop-color="#303843"/></linearGradient></defs><ellipse cx="41" cy="103" rx="18" ry="4.2" fill="#050606" opacity=".34"/><path d="M40 8l5 27h-10z" fill="#11151b"/><path d="M33 35h15l6 37H27z" fill="url(#lnMetal)"/><path d="M36 36h4v35h-4z" fill="#fff" opacity=".35"/><path d="M48 37l4 34h-5z" fill="#787b7b" opacity=".45"/><path d="M27 70h27v7H27z" fill="#448be8"/><path d="M30 77h22v23H30z" fill="url(#lnBody)"/><path d="M37 78v22" stroke="#66707b" stroke-width="2" opacity=".25"/><path d="M51 78v22" stroke="#07090d" stroke-width="2" opacity=".22"/></svg>`},
   {id:'smudge',name:'麥克筆',art:`<svg class="tool-illus" viewBox="0 0 80 110" aria-hidden="true"><defs><linearGradient id="mkTip" x1="33" y1="7" x2="48" y2="38" gradientUnits="userSpaceOnUse"><stop stop-color="#0d1016"/><stop offset=".5" stop-color="#262a31"/><stop offset="1" stop-color="#080a0d"/></linearGradient><linearGradient id="mkBody" x1="23" y1="61" x2="58" y2="61" gradientUnits="userSpaceOnUse"><stop stop-color="#4d535d"/><stop offset=".3" stop-color="#222731"/><stop offset=".68" stop-color="#151922"/><stop offset="1" stop-color="#333b46"/></linearGradient></defs><ellipse cx="41" cy="103" rx="24" ry="4.6" fill="#050606" opacity=".38"/><path d="M40 7c5 0 8 4 8 10v15H31V17c0-6 4-10 9-10z" fill="url(#mkTip)"/><path d="M25 33h31l5 20v47H20V53z" fill="url(#mkBody)"/><path d="M28 36h10v63H28z" fill="#555c66" opacity=".42"/><path d="M49 35h6l3 18v46h-9z" fill="#0b0e13" opacity=".45"/><path d="M21 63h39v7H21z" fill="#2d77e8"/><path d="M27 34h28l-5 10H32z" fill="#3d444d" opacity=".75"/><path d="M36 64h9v6h-9z" fill="#79b3ff" opacity=".38"/></svg>`}
 ];
-const QUICK_SWATCH=['#061a3a','#124AF2','#3222F4','#3F7BD4','#7898D6','#B8C4DA','#B7AEB7'];
+const TOOL_SPRITES={
+  eraser:'assets/tool-sprites/eraser.png',
+  pencil:'assets/tool-sprites/pencil.png',
+  pen:'assets/tool-sprites/pen.png',
+  brush:'assets/tool-sprites/brush.png',
+  water:'assets/tool-sprites/water.png',
+  marker:'assets/tool-sprites/marker.png',
+  smudge:'assets/tool-sprites/smudge.png'
+};
+const QUICK_SWATCH=['#061a3a','#124AF2','#3222F4','#3F7BD4','#7898D6','#B7AEB7'];
 function buildToolDock(){
   const rail=$('#toolRail'); rail.innerHTML='';
   TOOL_META.forEach(t=>{
     const b=document.createElement('button');
-    b.className='tool-btn'; b.dataset.tool=t.id; b.title=t.name; b.setAttribute('aria-label',t.name);
-    b.innerHTML=`<span class="tool-art">${t.art}</span>`;
+    b.className='tool-btn'; b.dataset.tool=t.id; b.dataset.tip=t.name; b.setAttribute('aria-label',t.name);
+    b.innerHTML=`<span class="tool-art"><img src="${TOOL_SPRITES[t.id]}" alt=""></span>`;
     b.addEventListener('click',()=>setTool(t.id,b));
     rail.appendChild(b);
   });
@@ -1462,9 +1706,12 @@ function setTool(tool,btn=null){
 function buildQuickColors(){
   const box=$('#quickColors'); box.innerHTML='';
   QUICK_SWATCH.forEach(c=>{
-    const b=document.createElement('button'); b.style.background=c; b.title=c; b.setAttribute('aria-label',c);
-    b.classList.toggle('on', c.toLowerCase()===S.color.toLowerCase());
-    b.addEventListener('click',()=>setColor(c));
+    const b=document.createElement('button'); b.style.background=c; b.setAttribute('aria-label',c);
+    const on = c.toLowerCase()===S.color.toLowerCase();
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.addEventListener('pointerdown',e=>e.stopPropagation());
+    b.addEventListener('click',e=>{ e.stopPropagation(); setColor(c); });
     box.appendChild(b);
   });
 }
@@ -1591,5 +1838,6 @@ $('#backBtn').addEventListener('click',showGallery);
 	  if(S.pencilMode) console.log('Pencil mode on');
 	})();
 </script>
+<script src="animate-drawings.js"></script>
 </body>
 </html>
