@@ -16,8 +16,8 @@
   --paper:#F6F1E8; --canvas-paper:#FBF8F1; --ink:#26241F; --ink-soft:#6E675C;
   --accent:#D97757; --line:rgba(38,36,31,.12);
   --chrome:rgba(251,248,241,.82); --shadow:0 8px 30px rgba(38,36,31,.14), 0 1px 3px rgba(38,36,31,.08);
-  --u:.42px; --headroom:28px; --tool-lift:12px;
-  --dock-height:calc(var(--u) * 291 + var(--headroom)); --dock-peek:22px;
+  --u:.42px; --tool-lift:12px;
+  --dock-height:calc(var(--u) * 250 + 30px); --dock-peek:22px;
   --dock-panel-offset:calc(env(safe-area-inset-bottom) + var(--dock-height) + 18px);
   --serif:"Fraunces", Georgia, serif;
   --sans:ui-sans-serif, -apple-system, "PingFang TC", sans-serif;
@@ -151,8 +151,9 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   font-size:13px;opacity:0;pointer-events:none;transition:all .3s;white-space:nowrap}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 /* ───── 工具托盤 ─────
-   一列：筆（從下緣長出）｜快速色票｜顏色＋筆刷大小。
-   所有尺寸由 --u（每素材像素的顯示長度）推導，筆永遠依素材原始比例呈現。 */
+   一列：筆（從下緣長出）｜我的顏色｜顏色＋筆刷大小。
+   所有尺寸由 --u（每素材像素的顯示長度）推導，筆依素材原始比例呈現；
+   筆頂齊高（top:16px），較長的筆多出的部分藏在托盤下緣，選中的筆抬起來一眼可辨。 */
 .tool-dock{
   display:grid;grid-template-columns:auto auto auto;grid-template-areas:"rail qc ctl";
   align-items:stretch;width:max-content;max-width:calc(100vw - 14px);
@@ -197,7 +198,7 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
 .tool-btn:focus-visible{outline:none}
 .tool-btn:focus-visible .tool-art{outline:2px solid rgba(255,255,255,.7);outline-offset:3px;border-radius:6px}
 .tool-art{
-  position:absolute;left:50%;bottom:calc(var(--u) * -44);
+  position:absolute;left:50%;top:16px;
   width:calc(var(--u) * var(--w));height:calc(var(--u) * var(--h));
   transform:translate(-50%,calc(var(--y) + var(--hover) + var(--press)));
   filter:drop-shadow(0 6px 6px rgba(0,0,0,.30));pointer-events:none;
@@ -274,7 +275,7 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
 @media (max-width:800px){ :root{--u:.37px} }
 /* 手機直向：色票移到托盤上方的獨立小條，托盤寬度全給筆 */
 @media (max-width:720px){
-  :root{--u:.285px;--headroom:26px;--tool-lift:9px;
+  :root{--u:.285px;--tool-lift:9px;
     --dock-panel-offset:calc(env(safe-area-inset-bottom) + var(--dock-height) + 64px)}
   .tool-dock{padding:0 12px 0 14px;border-radius:26px;grid-template-columns:auto auto;grid-template-areas:"rail ctl"}
   .tool-dock::after{border-radius:0 0 26px 26px}
@@ -311,7 +312,7 @@ svg.ic{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;str
   #toast{left:50%;bottom:calc(var(--dock-panel-offset) + 54px)}
 }
 @media (orientation:landscape) and (max-height:500px){
-  :root{--u:.30px;--headroom:24px;--tool-lift:9px}
+  :root{--u:.30px;--tool-lift:9px}
 }
 @media (prefers-reduced-motion:reduce){
   .tool-art,.quick-colors button,.color-orb,.size-orb,.dock-grabber::before{transition:none!important;animation:none!important}
@@ -509,7 +510,7 @@ const DB = {
 };
 
 /* ════════════════ 全域狀態 ════════════════ */
-const APP_VERSION = 'v2.7.1';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
+const APP_VERSION = 'v2.7.2';  /* 更新此值＝新版；首頁副標題與右下角標皆顯示 */
 const PAPER = '#FBF8F1';
 const S = {
   doc:null,            // {id,name,w,h,scale,layers:[{canvas,ctx,visible,opacity}],active}
