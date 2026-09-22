@@ -112,10 +112,14 @@
 
 /* v2.5 — one-tap rig, kid-friendly controls */
 .magic-go-card{background:linear-gradient(145deg,#fff3b8,#e8c95e)}
-.magic-go-art{font-size:72px;line-height:1;filter:drop-shadow(0 8px 14px rgba(120,90,10,.25))}
+.magic-go-art{display:flex;align-items:center;justify-content:center;width:98px;height:98px}
+.magic-go-art svg{width:56px;height:56px;fill:none;stroke:#4a3a12;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 8px 14px rgba(120,90,10,.25))}
 .magic-source-card strong{font-size:clamp(22px,3.4vw,28px)}
 #magicStage{touch-action:none;-webkit-touch-callout:none}
-.magic-actions button{min-width:64px;min-height:64px;padding:0;border-radius:22px;font:400 30px/1 system-ui,sans-serif;color:inherit}
+.magic-actions button{min-width:64px;min-height:64px;padding:0;border-radius:22px;color:inherit;display:flex;align-items:center;justify-content:center;transition:transform .16s cubic-bezier(.2,.9,.2,1.4),background .16s}
+.magic-actions button svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.magic-actions button:active{transform:scale(.88)}
 .magic-actions button.is-active{background:#eee5c6;transform:translateY(-3px)}
-#magicProcessingView h3{font:400 44px/1 system-ui,sans-serif}
+.magic-actions button.is-active:active{transform:translateY(-3px) scale(.9)}
+#magicProcessingView h3{font:italic 430 27px/1.2 var(--serif);color:rgba(247,241,231,.7);letter-spacing:.01em}
 .magic-import{min-height:44px;padding:0 18px;font-size:13px}
